@@ -4,6 +4,13 @@
 -include_lib("xmerl/include/xmerl.hrl").
 -include_lib("syntax_tools/include/merl.hrl").
 
+-record(request,{name,opcode,type,since,args}).
+-record(event,{name,evtcode,since,args}).
+-record(arg,{name,type,interface,allow_null,enum}).
+-record(enum,{name,since,bitfield,entries}).
+-record(entry,{name,value,since}).
+
+
 main([]) ->
     generate();
 
@@ -37,12 +44,81 @@ generate({ItfStr, VerStr, Data}, OutDir) ->
     end.
 
 
-generate(Itf, Ver, _Data) ->
+generate(Itf, Ver, Data) ->
+    {Rs,Evts,Enms} = parse_interface(Data),
+
+    RsInfo = requests_info(Rs),
+    EvtsInfo = events_info(Evts),
+    EnmsInfo = enums_info(Enms),
+
     ?Q(["-module('@Itf@')."
-       ,"-export([version/0])."
+       ,"-export([version/0,requests/0,events/0,enums/0])."
        ,""
        ,"version() -> _@Ver@."
+       ,"requests() -> _@RsInfo@."
+       ,"events() -> _@EvtsInfo@."
+       ,"enums() -> _@EnmsInfo@."
        ]).
+
+
+parse_interface(Data) ->
+    {Rs,_,Evs,_,Ens} = lists:foldl(fun parse_interface/2, {[],0,[],0,[]}, Data),
+    {lists:reverse(Rs), lists:reverse(Evs), lists:reverse(Ens)}.
+
+parse_interface(#xmlElement{name='request', attributes=Attrs, content=Cont}
+               ,{Rs,OpCode, Evts,EvtCode, Enms}) ->
+    R = #request{name   = atom_attribute(name, Attrs)
+                ,opcode = OpCode
+                ,type   = atom_attribute(type, Attrs)
+                ,since  = integer_attribute(since, Attrs, 1)
+                ,args   = lists:filtermap(fun parse_arg/1, Cont)
+                },
+    {[R|Rs], OpCode+1, Evts, EvtCode, Enms};
+
+parse_interface(#xmlElement{name='event', attributes=Attrs, content=Cont}
+               ,{Rs,OpCode, Evts,EvtCode, Enms}) ->
+    Evt = #event{name    = atom_attribute(name, Attrs)
+                ,evtcode = EvtCode
+                ,since   = integer_attribute(since, Attrs, 1)
+                ,args    = lists:filtermap(fun parse_arg/1, Cont)
+                },
+    {Rs, OpCode, [Evt|Evts], EvtCode+1, Enms};
+
+parse_interface(#xmlElement{name='enum', attributes=Attrs, content=Cont}
+               ,{Rs,OpCode, Evts,EvtCode, Enms}) ->
+    Enm = #enum{name     = atom_attribute(name, Attrs)
+               ,since    = integer_attribute(since, Attrs, 1)
+               ,bitfield = atom_attribute(bitfield, Attrs, false)
+               ,entries  = lists:filtermap(fun parse_entry/1, Cont)
+               },
+    {Rs, OpCode, Evts,EvtCode, [Enm|Enms]};
+
+parse_interface(_, Acc) ->
+    Acc.
+
+
+parse_arg(#xmlElement{name='arg', attributes=Attrs}) ->
+    {true, #arg{name       = atom_attribute(name, Attrs)
+               ,type       = atom_attribute(type, Attrs)
+               ,interface  = atom_attribute(interface, Attrs)
+               ,allow_null = atom_attribute('allow-null', Attrs, false)
+               ,enum       = atom_attribute(enum, Attrs)
+               }
+    };
+
+parse_arg(_) ->
+    false.
+
+
+parse_entry(#xmlElement{name='entry', attributes=Attrs}) ->
+    {true, #entry{name  = atom_attribute(name, Attrs)
+                 ,value = integer_attribute(value, Attrs, 0)
+                 ,since = integer_attribute(since, Attrs, 1)
+                 }
+    };
+
+parse_entry(_) ->
+    false.
 
 
 write_module(Forms, File) ->
@@ -90,3 +166,60 @@ interface_data(#xmlElement{attributes=Attrs, content=Cont}) ->
 objects_dir(Protocol) ->
     SrcDir = filename:absname(filename:dirname(escript:script_name())),
     filename:join([SrcDir, "..", "src", Protocol]).
+
+
+atom_attribute(Name, Attrs) -> atom_attribute(Name, Attrs, undefined).
+
+atom_attribute(Name, Attrs, Default) ->
+    case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
+        #xmlAttribute{value=V} -> list_to_atom(V);
+        false                  -> Default
+    end.
+
+
+integer_attribute(Name, Attrs, Default) ->
+    case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
+        #xmlAttribute{value="0x" ++ V} -> list_to_integer(V, 16);
+        #xmlAttribute{value=V}         -> list_to_integer(V, 10);
+        false                          -> Default
+    end.
+
+
+requests_info(Rs) ->
+    [request_info(R) || R <- Rs].
+
+request_info(#request{name=Name,opcode=Code,type=Type,since=Since,args=Args}) ->
+    Info = [{opcode,Code}, {type,Type}, {since,Since}],
+    {Name, args_info(Args), [{N,V} || {N,V} <- Info, V /= undefined]}.
+
+
+events_info(Evts) ->
+    [event_info(Evt) || Evt <- Evts].
+
+event_info(#event{name=Name,evtcode=Code,since=Since,args=Args}) ->
+    Info = [{evtcode,Code}, {since,Since}],
+    {Name, args_info(Args), [{N,V} || {N,V} <- Info, V /= undefined]}.
+
+
+enums_info(Enms) ->
+    [enum_info(Enm) || Enm <- Enms].
+
+enum_info(#enum{name=Name,since=Since,bitfield=BitField,entries=Entries}) ->
+    Info = [{since,Since}, {bitfield,BitField}],
+    {Name, entries_info(Entries), [{N,V} || {N,V} <- Info, V /= undefined]}.
+
+
+args_info(Args) ->
+    [arg_info(Arg) || Arg <- Args].
+
+arg_info(#arg{name=Name,type=Type,interface=Itf,allow_null=Null,enum=Enm}) ->
+    Info = [{interface,Itf}, {allow_null,Null}, {enum, Enm}],
+    {Name, Type, [{N,V} || {N,V} <- Info, V /= undefined]}.
+
+
+entries_info(Entries) ->
+    [entry_info(Entry) || Entry <- Entries].
+
+entry_info(#entry{name=Name,value=Val,since=Since}) ->
+    Info = [{since, Since}],
+    {Name, Val, [{N,V} || {N,V} <- Info, V /= undefined]}.
