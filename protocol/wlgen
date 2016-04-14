@@ -1,0 +1,92 @@
+#!/usr/bin/env escript
+%% -*- erlang -*-
+-mode(compile).
+-include_lib("xmerl/include/xmerl.hrl").
+-include_lib("syntax_tools/include/merl.hrl").
+
+main([]) ->
+    generate();
+
+main(["clean"]) ->
+    clean().
+
+
+generate() ->
+    lists:foreach(fun generate/1, protocols()).
+
+
+clean() ->
+    lists:foreach(fun clean/1, protocols()).
+
+
+generate(XmlFile) ->
+    {Protocol, Interfaces} = protocol_data(XmlFile),
+    OutDir = objects_dir(Protocol),
+    ok = filelib:ensure_dir(filename:join(OutDir, ".")),
+    lists:foreach(fun (Itf) -> generate(Itf, OutDir) end, Interfaces).
+
+
+generate({ItfStr, VerStr, Data}, OutDir) ->
+    File = filename:join(OutDir, ItfStr ++ ".erl"),
+    case filelib:is_regular(File) of
+        true ->
+            ok;
+        false ->
+            Mod = generate(list_to_atom(ItfStr), list_to_integer(VerStr), Data),
+            write_module(Mod, File)
+    end.
+
+
+generate(Itf, Ver, _Data) ->
+    ?Q(["-module('@Itf@')."
+       ,"-export([version/0])."
+       ,""
+       ,"version() -> _@Ver@."
+       ]).
+
+
+write_module(Forms, File) ->
+    {ok, IoDev} = file:open(File, [write]),
+    lists:foreach(fun (F) ->
+                          io:put_chars(IoDev, erl_prettypr:format(F)),
+                          io:nl(IoDev),
+                          io:nl(IoDev)
+                  end, erl_syntax:revert_forms(Forms)),
+    ok = file:close(IoDev).
+
+
+clean(XmlFile) ->
+    {Protocol, _} = protocol_data(XmlFile),
+    OutDir = objects_dir(Protocol),
+    case filelib:is_dir(OutDir) of
+        true ->
+            ErlFiles = filename:join(OutDir, "*.erl"),
+            lists:foreach(fun file:delete/1, filelib:wildcard(ErlFiles)),
+            ok = file:del_dir(OutDir);
+        false ->
+            ok
+    end.
+
+
+protocols() ->
+    Dir = filename:absname(filename:dirname(escript:script_name())),
+    filelib:wildcard(filename:join([Dir, "*.xml"])).
+
+
+protocol_data(XmlFile) ->
+    {#xmlElement{ name=protocol
+                , attributes=[#xmlAttribute{name=name,value=Protocol} | _]
+                , content=Cont}, []} = xmerl_scan:file(XmlFile),
+    Itfs = [interface_data(I) || #xmlElement{name=interface}=I <- Cont],
+    {Protocol, Itfs}.
+
+
+interface_data(#xmlElement{attributes=Attrs, content=Cont}) ->
+    [Name] = [V || #xmlAttribute{name=name,value=V} <- Attrs],
+    [Version] = [V || #xmlAttribute{name=version,value=V} <- Attrs],
+    {Name, Version, Cont}.
+
+
+objects_dir(Protocol) ->
+    SrcDir = filename:absname(filename:dirname(escript:script_name())),
+    filename:join([SrcDir, "..", "src", Protocol]).
