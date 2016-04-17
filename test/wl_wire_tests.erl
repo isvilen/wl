@@ -13,7 +13,13 @@ request_test_() -> [
     ?_assertEqual(<<10:32/native,100:16/native,12:16/native,1,2,3,4>>
                  ,wl_wire:encode_request(#wl_request{sender = 10
                                                     ,opcode = 100
-                                                    ,args   = <<1,2,3,4>>}))
+                                                    ,args   = <<1,2,3,4>>})),
+
+    ?_assertEqual(<<10:32/native,100:16/native,12:16/native,1,2,3,4>>
+                 ,wl_wire:encode_request(#wl_request{sender = 10
+                                                    ,opcode = 100
+                                                    ,args   = [ <<1,2>>
+                                                              , <<3,4>>]}))
 ].
 
 

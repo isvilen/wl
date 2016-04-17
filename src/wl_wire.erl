@@ -19,8 +19,12 @@
 
 
 encode_request(#wl_request{sender=Sender,opcode=Op,args=Args}) ->
-    Header = ((8 + byte_size(Args)) bsl 16) + Op,
-    <<Sender:32/native,Header:32/native,Args/binary>>.
+    ArgsBin = if
+                  is_binary(Args) -> Args;
+                  true            -> iolist_to_binary(Args)
+              end,
+    Header = ((8 + byte_size(ArgsBin)) bsl 16) + Op,
+    <<Sender:32/native,Header:32/native,ArgsBin/binary>>.
 
 
 decode_event(<<Sender:32/native,Header:32/native,Rest/binary>>) ->
