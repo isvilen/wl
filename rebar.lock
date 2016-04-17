@@ -1,1 +1,8 @@
-[].
+[{<<"afunix">>,
+  {git,"https://github.com/isvilen/afunix.git",
+       {ref,"9d8b13ca59d35df3d8ceb75e67571d41c00ebd9e"}},
+  0},
+ {<<"memfd">>,
+  {git,"https://github.com/isvilen/memfd.git",
+       {ref,"60bd0e69843749a68fbb46311d13823bce11ebf4"}},
+  0}].
