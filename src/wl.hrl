@@ -3,7 +3,7 @@
                    , args   :: binary()
                    }).
 
--record(wl_event,{ sender  :: pos_integer()
+-record(wl_event,{ sender  :: pos_integer() | {module(), pid()}
                  , evtcode :: non_neg_integer()
                  , args    :: binary()
                  }).
