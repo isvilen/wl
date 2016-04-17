@@ -47,18 +47,20 @@ generate({ItfStr, VerStr, Data}, OutDir) ->
 generate(Itf, Ver, Data) ->
     {Rs,Evts,Enms} = parse_interface(Data),
 
+    ItfExports = interface_exports(Rs, Evts),
+
     RsInfo = requests_info(Rs),
     EvtsInfo = events_info(Evts),
     EnmsInfo = enums_info(Enms),
 
-    ?Q(["-module('@Itf@')."
-       ,"-export([version/0,requests/0,events/0,enums/0])."
-       ,""
-       ,"version() -> _@Ver@."
-       ,"requests() -> _@RsInfo@."
-       ,"events() -> _@EvtsInfo@."
-       ,"enums() -> _@EnmsInfo@."
-       ]).
+    [ ?Q("-module('@Itf@').")
+    , ?Q("-export([version/0,requests/0,events/0,enums/0]).")
+    , ?Q("-export(['@_@ItfExports'/0]).")
+    , ?Q("version() -> _@Ver@.")
+    , ?Q("requests() -> _@RsInfo@.")
+    , ?Q("events() -> _@EvtsInfo@.")
+    , ?Q("enums() -> _@EnmsInfo@.")
+    ] ++ interface_api(Rs, Evts, Enms).
 
 
 parse_interface(Data) ->
@@ -185,6 +187,162 @@ integer_attribute(Name, Attrs, Default) ->
     end.
 
 
+interface_exports(Rs, Evts) ->
+    requests_export(Rs) ++ events_export(Evts).
+
+
+requests_export(Rs) ->
+    [request_export(R) || R <- Rs].
+
+request_export(#request{name=Name,args=Args}) ->
+    Q1 = length(Args) + 1,
+    erl_syntax:arity_qualifier(?Q("'@Name@'"), ?Q("909199")).
+
+
+events_export([]) ->
+    [];
+events_export(_) ->
+    [erl_syntax:arity_qualifier(?Q("'$notify$'"), ?Q("4"))].
+
+
+interface_api(Rs, Evts, Enms) ->
+    requests_api(Rs) ++ events_api(Evts) ++ enum_encode_decode(Enms, Rs, Evts).
+
+
+requests_api(Rs) ->
+    [request_api(R) || R <- Rs].
+
+
+request_api(#request{name=Name,opcode=Code,args=Args,type=destructor}) ->
+    request_api(Name, Code, args_to_vars(Args), '$request_destructor$');
+
+request_api(#request{name=Name,opcode=Code,args=Args,type=undefined}) ->
+    case has_new_id_arg(Args) of
+        true  ->
+            request_new_id_api(Name, Code, args_to_vars(Args));
+        false ->
+            request_api(Name, Code, args_to_vars(Args), '$request')
+    end.
+
+request_api(Name, Code, {AllVars, {Args,ArgsVars}, FdsVars}, Type) ->
+    EncArgs = encode_args_ast(Args, ArgsVars),
+    ?Q(["'@Name@'(Pid, _@@AllVars) ->"
+       ,"    Pid ! {_@Type@, _@Code@, _@EncArgs, [_@@FdsVars]},"
+       ,"    ok."
+       ]).
+
+
+request_new_id_api(Name, Code, {AllVars, {Args,ArgsVars}, FdsVars}) ->
+    EncArgs = encode_args_ast(Args, ArgsVars),
+    ?Q(["'@Name@'(Pid, _@@AllVars) ->"
+       ,"    Mref = erlang:monitor(process, Pid),"
+       ,"    Request = {_@Code@, _@EncArgs, [_@@FdsVars]},"
+       ,"    Pid ! {'$request_new_id$', {self(), Mref}, Request},"
+       ,"    receive"
+       ,"        {Mref, Reply} ->"
+       ,"            erlang:demonitor(Mref, [flush]),"
+       ,"            Reply;"
+       ,"        {'DOWN', Mref, _, _, Reason} ->"
+       ,"            exit(Reason)"
+       ,"    after 5000 ->"
+       ,"        erlang:demonitor(Mref, [flush]),"
+       ,"        exit(timeout)"
+       ,"    end."
+       ]).
+
+
+events_api([]) ->
+    [];
+
+events_api(Evts) ->
+    Clauses = lists:map(fun notify_fun_clause/1, Evts),
+    [?Q("'$notify$'(Pid, EvtCode, Args, Fds) -> _@_Clauses.")].
+
+
+notify_fun_clause(#event{name=Name,evtcode=Code,args=Args}) ->
+    notify_fun_clause(Name, Code, args_to_vars(Args)).
+
+
+notify_fun_clause(Name, Code, {[], {[], []}, []}) ->
+    ?Q(["(Pid, _@Code@, <<>>, Fds) ->"
+       ,"  Pid ! {'$event$', _@Name@, []}, Fds"
+       ]);
+
+notify_fun_clause(Name, Code, {_, {[], []}, FdsVars}) ->
+    ?Q(["(Pid, _@Code@, <<>>, [_@@FdsVars | Rest]) ->"
+       ,"  Pid ! {'$event$', _@Name@, [_@@FdsVars]}, Rest"
+       ]);
+
+notify_fun_clause(Name, Code, {AllVars, {Args, ArgsVars}, []}) ->
+    DecArgs = decode_args_ast(Args, ArgsVars, merl:var("Args")),
+    ?Q(["(Pid, _@Code@, Args, Fds) ->"
+       ,"  _@@DecArgs,"
+       ,"  Pid ! {'$event$', _@Name@, [_@@AllVars]}, Fds"
+       ]);
+
+notify_fun_clause(Name, Code, {AllVars, {Args, ArgsVars}, FdsVars}) ->
+    DecArgs = decode_args_ast(Args, ArgsVars, merl:var("Args")),
+    ?Q(["(Pid, _@Code@, Args, [_@@FdsVars | Rest]) ->"
+       ,"  _@@DecArgs,"
+       ,"  Pid ! {'$event$', _@Name@, [_@@AllVars]}, Rest"
+       ]).
+
+
+enum_encode_decode(Enms, Rs, Evts) ->
+    enum_encode_fun(Enms, Rs) ++ enum_decode_fun(Enms, Evts).
+
+
+enum_encode_fun(Enms, Rs) ->
+    UsedEnums = used_enums([Args || #request{args=Args} <- Rs]),
+    case sets:size(UsedEnums) of
+        0 -> [];
+        _ -> [enum_encode_fun([Enm || #enum{name=N}=Enm <- Enms
+                                    , sets:is_element(N, UsedEnums)])]
+    end.
+
+enum_encode_fun(Enms) ->
+    Clauses = lists:flatmap(fun enum_encode_clauses/1, Enms),
+    ?Q("encode_enum(Enum, Value) -> _@_Clauses.").
+
+enum_encode_clauses(#enum{name=Name,entries=Entries,bitfield=false}) ->
+    [?Q("(_@Name@,_@N@) -> _@V@") || #entry{name=N,value=V} <- Entries];
+
+enum_encode_clauses(#enum{name=Name,entries=Entries,bitfield=true}) ->
+    Clauses = [?Q("(_@N@,V) -> V bor _@V@")
+               || #entry{name=N,value=V} <- Entries],
+    [?Q("(_@Name@,V) when is_atom(V) -> encode_enum(_@Name@,[V])")
+    ,?Q("(_@Name@,Vs) -> lists:foldl(fun (_,_) -> _@_Clauses end, 0, Vs)")].
+
+
+enum_decode_fun(Enms, Evts) ->
+    UsedEnums = used_enums([Args || #event{args=Args} <- Evts]),
+    case sets:size(UsedEnums) of
+        0 -> [];
+        _ -> [enum_decode_fun([Enm || #enum{name=N}=Enm <- Enms
+                                    , sets:is_element(N, UsedEnums)])]
+    end.
+
+enum_decode_fun(Enms) ->
+    Clauses = lists:flatmap(fun enum_decode_clauses/1, Enms),
+    ?Q("decode_enum(Enum, Value) -> _@_Clauses.").
+
+
+enum_decode_clauses(#enum{name=Name,entries=Entries,bitfield=false}) ->
+    [?Q("(_@Name@,_@V@) -> _@N@") || #entry{name=N,value=V} <- Entries];
+
+enum_decode_clauses(#enum{name=Name,entries=Entries,bitfield=true}) ->
+    Vs = [{N,V} || #entry{name=N,value=V} <- Entries],
+    [?Q(["(_@Name@,V) ->"
+        ,"   lists:foldl(fun ({N,V1},_) when V == V1 -> [N];"
+        ,"                   ({N,V1},Ns) when (V band V1) /= 0 -> [N | Ns];"
+        ,"                   (_, Ns)                           -> Ns"
+        ,"               end, [], _@Vs@)"])].
+
+
+used_enums(ArgsList) ->
+    Enums = [N || Args <- ArgsList, #arg{enum=N} <- Args, N /= undefined],
+    sets:from_list(Enums).
+
 requests_info(Rs) ->
     [request_info(R) || R <- Rs].
 
@@ -223,3 +381,181 @@ entries_info(Entries) ->
 entry_info(#entry{name=Name,value=Val,since=Since}) ->
     Info = [{since, Since}],
     {Name, Val, [{N,V} || {N,V} <- Info, V /= undefined]}.
+
+
+args_to_vars(Args) ->
+    ArgsVars = [{A,var_ast("A",N)}
+                || {A,N} <- lists:zip(Args,lists:seq(1, length(Args)))],
+
+    {As, Fds} = lists:partition(fun ({A,_}) -> not is_fd_arg(A) end, ArgsVars),
+
+    AsVars  = [V || {_,V} <- As],
+    FdsVars = [V || {_,V} <- Fds],
+    AllVars = [V || {_,V} <- ArgsVars],
+
+    {AllVars, {[A || {A,_} <- As], AsVars}, FdsVars}.
+
+
+is_fd_arg(#arg{type=T}) -> T == 'fd'.
+
+
+has_new_id_arg(Args) ->
+    lists:any(fun (#arg{type=Type}) -> Type == new_id end, Args).
+
+
+encode_args_ast(Args, Vars) ->
+    encode_args_ast(Args, Vars, has_new_id_arg(Args)).
+
+encode_args_ast(Args, Vars, false) ->
+    EncArgs = [encode_arg_ast(A,V) || {A,V} <- lists:zip(Args, Vars)],
+    ?Q("[_@EncArgs]");
+
+encode_args_ast(Args, Vars, true) ->
+    Split = fun ({#arg{type=T},_}) -> T /= new_id end,
+    {A1, [NewId | A2]} = lists:splitwith(Split, lists:zip(Args, Vars)),
+    {NewIdArg, NewIdVar} = NewId,
+
+    EncA1 = [encode_arg_ast(A,V) || {A,V} <- A1],
+    EncNewId = encode_arg_ast(NewIdArg, NewIdVar),
+    EncA2 = [encode_arg_ast(A,V) || {A,V} <- A2],
+
+    ?Q("{[_@EncA1], _@EncNewId, [_@EncA2]}").
+
+
+encode_arg_ast(#arg{type=int, enum=undefined}, V) ->
+    ?Q("wl_wire:encode_int(_@V)");
+
+encode_arg_ast(#arg{type=int, enum=E}, V) ->
+    ?Q("wl_wire:encode_int(encode_enum(_@E@,_@V))");
+
+encode_arg_ast(#arg{type=uint, enum=undefined}, V) ->
+    ?Q("wl_wire:encode_uint(_@V)");
+
+encode_arg_ast(#arg{type=uint, enum=E}, V) ->
+    ?Q("wl_wire:encode_uint(encode_enum(_@E@,_@V))");
+
+encode_arg_ast(#arg{type=new_id, interface=undefined}, V) ->
+    ?Q("{new_id, _@V}");
+
+encode_arg_ast(#arg{type=new_id, interface=Itf}, V) ->
+    ?Q("{new_id, _@Itf@, _@V}");
+
+encode_arg_ast(#arg{type=object}, V) ->
+    ?Q("{id, _@V}");
+
+encode_arg_ast(#arg{type=string}, V) ->
+    ?Q("wl_wire:encode_string(_@V)");
+
+encode_arg_ast(#arg{type=fixed}, V) ->
+    ?Q("wl_wire:encode_fixed(_@V)");
+
+encode_arg_ast(#arg{type=array}, V) ->
+    ?Q("wl_wire:encode_array(_@V)").
+
+
+decode_args_ast(Args, Vars, In) ->
+    decode_args_ast(Args, Vars, In, []).
+
+decode_args_ast([], [], _, Acc) ->
+    lists:reverse(Acc);
+
+decode_args_ast([A], [V], In, Acc) ->
+    D = decode_last_arg_ast(A, V, In),
+    lists:reverse([D | Acc]);
+
+decode_args_ast([A | As], [V | Vs], In, Acc) ->
+    {D, Rest} = decode_arg_ast(A, V, In, length(Acc)),
+    decode_args_ast(As, Vs, Rest, [D | Acc]).
+
+
+decode_arg_ast(#arg{type=int, enum=undefined}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    {?Q("{_@V ,_@Rest} = wl_wire:decode_int(_@Args)"), Rest};
+
+decode_arg_ast(#arg{type=uint, enum=undefined}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    {?Q("{_@V ,_@Rest} = wl_wire:decode_uint(_@Args)"), Rest};
+
+decode_arg_ast(#arg{type=int, enum=Enum}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    V1 = var_ast(V,1),
+    {?Q(["{_@V1,_@Rest} = wl_wire:decode_int(_@Args),"
+        ,"_@V = decode_enum('@Enum@', _@V1)"])
+    , Rest};
+
+decode_arg_ast(#arg{type=uint, enum=Enum}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    V1 = var_ast(V,1),
+    {?Q(["{_@V1,_@Rest} = wl_wire:decode_uint(_@Args),"
+        ,"_@V = decode_enum('@Enum@', _@V1)"])
+    , Rest};
+
+decode_arg_ast(#arg{type=new_id, interface=Itf}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    V1 = var_ast(V,1),
+    {?Q(["{_@V1, _@Rest} = wl_wire:decode_object(_@Args),"
+        ,"_@V = {new_id, _@Itf@, _@V1}"])
+    , Rest};
+
+decode_arg_ast(#arg{type=object}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    V1 = var_ast(V,1),
+    {?Q(["{_@V1, _@Rest} = wl_wire:decode_object(_@Args),"
+        ,"_@V = {id, _@V1}"])
+    , Rest};
+
+decode_arg_ast(#arg{type=string}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    {?Q("{_@V, _@Rest} = wl_wire:decode_string(_@Args)"), Rest};
+
+decode_arg_ast(#arg{type=fixed}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    {?Q("{_@V, _@Rest} = wl_wire:decode_fixed(_@Args)"), Rest};
+
+decode_arg_ast(#arg{type=array}, V, Args, N) ->
+    Rest = var_ast("Args", N),
+    {?Q("{_@V, _@Rest} = wl_wire:decode_array(_@Args)"), Rest}.
+
+
+decode_last_arg_ast(#arg{type=int, enum=undefined}, V, Args) ->
+    ?Q("{_@V, <<>>} = wl_wire:decode_int(_@Args)");
+
+decode_last_arg_ast(#arg{type=uint, enum=undefined}, V, Args) ->
+    ?Q("{_@V, <<>>} = wl_wire:decode_uint(_@Args)");
+
+decode_last_arg_ast(#arg{type=int, enum=Enum}, V, Args) ->
+    V1 = var_ast(V,1),
+    ?Q(["{_@V1,<<>>} = wl_wire:decode_int(_@Args),"
+       ,"_@V = decode_enum('@Enum@', _@V1)"]);
+
+decode_last_arg_ast(#arg{type=uint, enum=Enum}, V, Args) ->
+    V1 = var_ast(V,1),
+    ?Q(["{_@V1,<<>>} = wl_wire:decode_uint(_@Args),"
+       ,"_@V = decode_enum('@Enum@', _@V1)"]);
+
+decode_last_arg_ast(#arg{type=new_id, interface=Itf}, V, Args) ->
+    V1 = var_ast(V,1),
+    ?Q(["{_@V1, <<>>} = wl_wire:decode_object(_@Args),"
+       ,"_@V = {new_id, _@Itf@, _@V1}"]);
+
+decode_last_arg_ast(#arg{type=object}, V, Args) ->
+    V1 = var_ast(V,1),
+    ?Q(["{_@V1, <<>>} = wl_wire:decode_object(_@Args),"
+       ,"_@V = {id, _@V1}"]);
+
+decode_last_arg_ast(#arg{type=string}, V, Args) ->
+    ?Q("{_@V, <<>>} = wl_wire:decode_string(_@Args)");
+
+decode_last_arg_ast(#arg{type=fixed}, V, Args) ->
+    ?Q("{_@V, <<>>} = wl_wire:decode_fixed(_@Args)");
+
+decode_last_arg_ast(#arg{type=array}, V, Args) ->
+    ?Q("{_@V, <<>>} = wl_wire:decode_array(_@Args)").
+
+
+var_ast(Prefix, Id) when is_list(Prefix) ->
+    merl:var(Prefix ++ integer_to_list(Id));
+
+var_ast(BaseVar, Id) ->
+    Prefix = erl_syntax:variable_literal(BaseVar),
+    var_ast(Prefix ++ "_", Id).
