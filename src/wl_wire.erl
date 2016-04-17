@@ -41,7 +41,7 @@ decode_event(<<Sender:32/native,Header:32/native,Rest/binary>>) ->
     end;
 
 decode_event(Data) when is_binary(Data) ->
-    {incomplete, Data}.
+    incomplete.
 
 
 encode_int(V) when is_integer(V) ->

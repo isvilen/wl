@@ -42,6 +42,9 @@ event_test_() -> [
                  ,wl_wire:decode_event(<<1:32/native
                                         ,2:16/native,12:16/native>>)),
 
+    ?_assertEqual(incomplete
+                 ,wl_wire:decode_event(<<1:32/native, 2:16/native>>)),
+
     %% size must be >= 8
     ?_assertEqual(error
                  ,wl_wire:decode_event(<<1:32/native
