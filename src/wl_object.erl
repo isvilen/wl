@@ -2,6 +2,8 @@
 
 -export([ start_link/4
         , notify/2
+        , call/2
+        , call/3
         ]).
 
 % internal API
@@ -20,6 +22,24 @@ start_link(Id, {Itf, Ver}, Conn, Handler) ->
 
 notify(#wl_event{sender={Mod, Pid},evtcode=Code,args=Args}, Fds) ->
     Mod:'$notify$'(Pid, Code, Args, Fds).
+
+
+call(Pid, Request) ->
+    call(Pid, Request, 5000).
+
+call(Pid, Request, Timeout) ->
+    Mref = erlang:monitor(process, Pid),
+    Pid ! {'$call$', {self(), Mref}, Request},
+    receive
+        {Mref, Reply} ->
+            erlang:demonitor(Mref, [flush]),
+            Reply;
+        {'DOWN', Mref, _, _, Reason} ->
+            exit(Reason)
+    after Timeout ->
+            erlang:demonitor(Mref, [flush]),
+            exit(timeout)
+    end .
 
 
 -record(state,{id,interface,version,connection,handler,handler_state}).
@@ -137,6 +157,13 @@ loop(Parent, Name, State, Dbg) ->
             NewState = handle_event(Event, Args, State),
             loop(Parent, Name, NewState, Dbg1);
 
+        {'$call$', {To, Tag}, Request} = Msg->
+            Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
+            {Reply, NewState} = handle_call(Request, State),
+            To ! {Tag, Reply},
+            Dbg2 = sys:handle_debug(Dbg1, fun debug/3, Name, {out, Reply, To}),
+            loop(Parent, Name, NewState, Dbg2);
+
         {system, From, Msg} ->
             sys:handle_system_msg(Msg, From, Parent, ?MODULE, Dbg,
                                   {fun loop/4, Name, State});
@@ -221,6 +248,15 @@ event_arg({id, Id}, #state{connection=Conn}) ->
 
 event_arg(Arg, _) ->
     Arg.
+
+
+handle_call(Request, #state{handler=Handler}=State) ->
+    case Handler:handle_call(Request, State#state.handler_state) of
+        {reply, Reply} ->
+            {Reply, State};
+        {reply, Reply, NewHandlerState} ->
+            {Reply, State#state{handler_state=NewHandlerState}}
+    end.
 
 
 debug(Dev, {in, Msg}, Name) ->
