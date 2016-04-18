@@ -221,7 +221,7 @@ request_api(#request{name=Name,opcode=Code,args=Args,type=undefined}) ->
         true  ->
             request_new_id_api(Name, Code, args_to_vars(Args));
         false ->
-            request_api(Name, Code, args_to_vars(Args), '$request')
+            request_api(Name, Code, args_to_vars(Args), '$request$')
     end.
 
 request_api(Name, Code, {AllVars, {Args,ArgsVars}, FdsVars}, Type) ->

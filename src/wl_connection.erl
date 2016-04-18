@@ -219,7 +219,7 @@ send_request(Request, [], #state{socket=S}=State) ->
 
 send_request(Request, Fds, #state{socket=S}=State) ->
     EncRequest = wl_wire:encode_request(Request),
-    afunix:send(S, EncRequest, Fds),
+    afunix:send(S, Fds, EncRequest),
     notify_read(State).
 
 
