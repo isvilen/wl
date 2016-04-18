@@ -148,9 +148,9 @@ loop(Parent, Name, State, Dbg) ->
             loop(Parent, Name, NewState, Dbg2);
 
         {'$request_destructor$', Code, Args, Fds} = Msg->
-            Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
-            NewState = handle_request_destructor(Code, Args, Fds, State),
-            zombie(Parent, Name, NewState, Dbg1);
+            sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
+            NewState = handle_request(Code, Args, Fds, State),
+            terminate(normal, NewState);
 
         {'$event$', Event, Args} = Msg ->
             Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
@@ -173,15 +173,10 @@ loop(Parent, Name, State, Dbg) ->
     end.
 
 
-zombie(Parent, Name, Data, Dbg) ->
-    receive
-        {system, From, Msg} ->
-            sys:handle_system_msg(Msg, From, Parent, ?MODULE, Dbg,
-                                  {fun zombie/4, Name, Data});
-        Msg ->
-            Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
-            zombie(Parent, Name, Data, Dbg1)
-    end.
+terminate(Reason, #state{handler=Handler}=State) ->
+    catch Handler:terminate(State#state.handler_state),
+    wl_connection:unregister(State#state.connection, self()),
+    exit(Reason).
 
 
 handle_request(Code, Args, Fds, State) ->
@@ -204,14 +199,6 @@ handle_request_new_id(Code, Args, Fds, State) ->
         {ok, Pid}       -> {Pid, State};
         {error, Reason} -> exit(Reason)
     end.
-
-
-handle_request_destructor(Code, Args, Fds, #state{handler=Handler}=State) ->
-    NewArgs = [request_arg(Arg, State#state.connection) || Arg <- Args],
-    Request = #wl_request{sender=State#state.id,opcode=Code,args=NewArgs},
-    ok = wl_connection:request(State#state.connection, Request, Fds),
-    Handler:terminate(State#state.handler_state),
-    State.
 
 
 request_arg({id, Pid}, Conn) ->
@@ -272,5 +259,4 @@ system_continue(Parent, Debug, {Loop, Name, Data}) ->
 
 
 system_terminate(Reason, _Parent, _Debug, {_Loop, _Name, State}) ->
-    wl_connection:unregister(State#state.connection, self()),
-    exit(Reason).
+    terminate(Reason, State).
