@@ -7,7 +7,6 @@
         , unregister/2
         , request/3
         , request_new_id/2
-        , free_id/2
         , id_to_pid/2
         , id_to_module/2
         , id_to_module_pid/2
@@ -45,10 +44,6 @@ request(ConnPid, Request, Fds) ->
 
 request_new_id(ConnPid, RequestFun) ->
     gen_server:call(ConnPid, {request_new_id, RequestFun}).
-
-
-free_id(ConnPid, Id) ->
-    gen_server:cast(ConnPid, {free_id, Id}).
 
 
 id_to_pid(ConnPid, Id) ->
@@ -142,9 +137,6 @@ handle_cast({unregister, Pid}, State) ->
 handle_cast({request, Request, Fds}, State) ->
     {noreply, send_request(Request, Fds, State)};
 
-handle_cast({free_id, Id},  State) ->
-    {noreply, free_object_id(Id, State)};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -168,7 +160,7 @@ new_id(#state{free_ids=[],next_id=NextId}=State) ->
     {NextId, State#state{next_id=NextId+1}};
 
 new_id(#state{free_ids=[Id|Ids]}=State) ->
-    {Id, State#state{free_ids=[Ids]}}.
+    {Id, State#state{free_ids=Ids}}.
 
 
 handle_id_to_pid(Id, #state{ids=Ids}) ->
@@ -205,17 +197,14 @@ register_object(Id, Module, Pid, #state{pids=Pids, ids=Ids}=State) ->
                }.
 
 
-unregister_object(Pid, #state{pids=Pids, ids=Ids}=State) ->
+unregister_object(Pid, #state{pids=Pids, ids=Ids, free_ids=FreeIds}=State) ->
     case maps:get(Pid, Pids, undefined) of
         undefined -> State;
         {_, Id} -> State#state{ pids=maps:remove(Pid, Pids)
                               , ids=maps:remove(Id, Ids)
+                              , free_ids=[Id | FreeIds]
                               }
     end.
-
-
-free_object_id(Id, #state{free_ids=FreeIds}=State) ->
-    State#state{free_ids=[Id | FreeIds]}.
 
 
 send_request(Request, [], #state{socket=S}=State) ->

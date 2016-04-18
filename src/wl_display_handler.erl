@@ -8,10 +8,11 @@ init(_Ver) ->
     {ok, []}.
 
 
-handle_event(error, [ObjectId, Code, Message], State) ->
-    io:format("wl_display_error: object_id=~p, code=~p, message=~p~n",
-              [ObjectId, Code, Message]),
-    {new_state, State};
+handle_event(error, [ObjectId, Code, Message], _State) ->
+    error_logger:error_report([ {object, ObjectId}
+                              , {error, Code}
+                              , {message, Message}
+                              ]);
 
 handle_event(delete_id, [Id], State) ->
     {delete_id, Id, State}.

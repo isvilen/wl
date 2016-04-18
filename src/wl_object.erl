@@ -27,7 +27,7 @@ notify(#wl_event{sender={Mod, Pid},evtcode=Code,args=Args}, Fds) ->
 
 init(Parent, Id, Itf, Ver, Conn, Handler) ->
     InitHandler = init_handler(Parent, Ver, Handler),
-    init_1(Parent, Id, Itf, Ver, Conn, Handler, InitHandler).
+    init_1(Parent, Id, Itf, Ver, Conn, InitHandler).
 
 
 init_new_id(Parent, ParentId, _ParentVer, OpCode,
@@ -46,7 +46,7 @@ init_new_id(Parent, ParentId, _ParentVer, OpCode,
                   ++ NewArgs2,
               {#wl_request{sender=ParentId,opcode=OpCode,args=NewArgs}, Fds}
           end,
-    init_2(Parent, Fun, Itf, Ver, Conn, Handler, InitHandler);
+    init_2(Parent, Fun, Itf, Ver, Conn, InitHandler);
 
 init_new_id(Parent, ParentId, ParentVer, OpCode,
             {Args1, {new_id, Itf, Handler}, Args2},
@@ -59,10 +59,10 @@ init_new_id(Parent, ParentId, ParentVer, OpCode,
               NewArgs = NewArgs1 ++ [wl_wire:encode_object(NewId) | NewArgs2],
               {#wl_request{sender=ParentId,opcode=OpCode,args=NewArgs}, Fds}
           end,
-    init_2(Parent, Fun, Itf, Ver, Conn, Handler, InitHandler).
+    init_2(Parent, Fun, Itf, Ver, Conn, InitHandler).
 
 
-init_1(Parent, Id, Itf, Ver, Conn, Handler, {ok, HandlerState}) ->
+init_1(Parent, Id, Itf, Ver, Conn, {ok, Handler, HandlerState}) ->
     ok = wl_connection:register(Conn, Id, Itf, self()),
     proc_lib:init_ack(Parent, {ok, self()}),
     State = #state{ id=Id
@@ -74,27 +74,28 @@ init_1(Parent, Id, Itf, Ver, Conn, Handler, {ok, HandlerState}) ->
                   },
     loop(Parent, {Itf, self()}, State, []);
 
-init_1(Parent, _Id, _Itf, _Ver, _Conn, _Handler, {stop, Reason}) ->
+init_1(Parent, _Id, _Itf, _Ver, _Conn, {stop, Reason}) ->
     proc_lib:init_ack(Parent, {error, Reason}),
     exit(Reason);
 
-init_1(Parent, _Id, _Itf, _Ver, _Conn, _Handler, Other) ->
+init_1(Parent, _Id, _Itf, _Ver, _Conn, Other) ->
     Reason = {bad_return_value, Other},
     proc_lib:init_ack(Parent, {error, Reason}),
     exit(Reason).
 
 
-init_2(Parent, Fun, Itf, Ver, Conn, Handler, {ok, _}=InitHandler) ->
+init_2(Parent, Fun, Itf, Ver, Conn, {ok, _, _}=InitHandler) ->
     Id = wl_connection:request_new_id(Conn, Fun),
-    init_1(Parent, Id, Itf, Ver, Conn, Handler, InitHandler);
+    init_1(Parent, Id, Itf, Ver, Conn, InitHandler);
 
-init_2(Parent, _Fun, Itf, Ver, Conn, Handler, InitHandler) ->
-    init_1(Parent, null, Itf, Ver, Conn, Handler, InitHandler).
+init_2(Parent, _Fun, Itf, Ver, Conn, InitHandler) ->
+    init_1(Parent, null, Itf, Ver, Conn, InitHandler).
 
 
 init_handler(Parent, Ver, {Handler, Init}) ->
-    try
-        Handler:init(Ver, Init)
+    try Handler:init(Ver, Init) of
+        {ok, HandlerState} -> {ok, Handler, HandlerState};
+        Other              -> Other
     catch
         _:Reason ->
             proc_lib:init_ack(Parent, {error, Reason}),
@@ -102,8 +103,9 @@ init_handler(Parent, Ver, {Handler, Init}) ->
     end;
 
 init_handler(Parent, Ver, Handler) ->
-    try
-        Handler:init(Ver)
+    try Handler:init(Ver) of
+        {ok, HandlerState} -> {ok, Handler, HandlerState};
+        Other              -> Other
     catch
         _:Reason ->
             proc_lib:init_ack(Parent, {error, Reason}),
@@ -195,10 +197,13 @@ request_arg(Arg, _) ->
 handle_event(Event, Args, #state{handler=Handler}=State) ->
     NewArgs = [event_arg(Arg, State) || Arg <- Args],
     case Handler:handle_event(Event, NewArgs, State#state.handler_state) of
+        ok ->
+            State;
         {new_state, NewHandlerState} ->
             State#state{handler_state=NewHandlerState};
         {delete_id, Id, NewHandlerState} ->
-            wl_connection:free_id(State#state.connection, Id),
+            Pid = wl_connection:id_to_pid(State#state.connection, Id),
+            ok = proc_lib:stop(Pid),
             State#state{handler_state=NewHandlerState}
     end.
 

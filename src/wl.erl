@@ -2,6 +2,7 @@
 
 -export([ connect/0
         , connect/1
+        , sync/1
         ]).
 
 connect() ->
@@ -10,6 +11,14 @@ connect() ->
 
 connect(SocketPath) ->
     wl_connection:start_link(SocketPath, wl_display_handler).
+
+
+sync(Conn) ->
+    Display = wl_connection:display(Conn),
+    CallBackPid = wl_display:sync(Display, {wl_callback_handler, self()}),
+    receive
+        {done, CallBackPid, _} -> ok
+    end.
 
 
 %% Internal functions
