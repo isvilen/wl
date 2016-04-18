@@ -124,8 +124,9 @@ handle_call({pid_to_id, Pid}, _From, State) ->
 
 handle_call({request_new_id, RequestFun}, _From, State) ->
     {NewId, State1} = new_id(State),
-    {Request, Fds} = RequestFun(NewId),
-    {reply, NewId, send_request(Request, Fds, State1)};
+    {{Module, NewPid}, Request, Fds} = RequestFun(NewId),
+    State2 = register_object(NewId, Module, NewPid, State1),
+    {reply, NewId, send_request(Request, Fds, State2)};
 
 handle_call(get_display, _From, #state{display=Display}=State) ->
     {reply, Display, State};

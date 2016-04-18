@@ -49,6 +49,13 @@ init(Parent, Id, Itf, Ver, Conn, Handler) ->
     InitHandler = init_handler(Parent, {Itf,Ver}, Handler),
     init_1(Parent, Id, Itf, Ver, Conn, InitHandler).
 
+init_1(Parent, Id, Itf, Ver, Conn, {ok, _, _} = InitHandler) ->
+    ok = wl_connection:register(Conn, Id, Itf, self()),
+    init_ack(Parent, Id, Itf, Ver, Conn, InitHandler);
+
+init_1(Parent, Id, Itf, Ver, Conn, InitHandler) ->
+    init_ack(Parent, Id, Itf, Ver, Conn, InitHandler).
+
 
 init_new_id(Parent, ParentId, _ParentVer, OpCode,
             {Args1, {new_id, {Itf, Ver, Handler}}, Args2},
@@ -56,6 +63,7 @@ init_new_id(Parent, ParentId, _ParentVer, OpCode,
     InitHandler = init_handler(Parent, {Itf,Ver}, Handler),
     NewArgs1 = [request_arg(Arg, Conn) || Arg <- Args1],
     NewArgs2 = [request_arg(Arg, Conn) || Arg <- Args2],
+    Self = {Itf, self()},
     Fun = fun (NewId) ->
               ItfBin = list_to_binary(atom_to_list(Itf)),
               NewArgs = NewArgs1 ++
@@ -64,9 +72,9 @@ init_new_id(Parent, ParentId, _ParentVer, OpCode,
                   , wl_wire:encode_object(NewId)
                   ]
                   ++ NewArgs2,
-              {#wl_request{sender=ParentId,opcode=OpCode,args=NewArgs}, Fds}
+              {Self,#wl_request{sender=ParentId,opcode=OpCode,args=NewArgs},Fds}
           end,
-    init_2(Parent, Fun, Itf, Ver, Conn, InitHandler);
+    init_new_id_1(Parent, Fun, Itf, Ver, Conn, InitHandler);
 
 init_new_id(Parent, ParentId, ParentVer, OpCode,
             {Args1, {new_id, Itf, Handler}, Args2},
@@ -75,15 +83,22 @@ init_new_id(Parent, ParentId, ParentVer, OpCode,
     InitHandler = init_handler(Parent, {Itf,Ver}, Handler),
     NewArgs1 = [request_arg(Arg, Conn) || Arg <- Args1],
     NewArgs2 = [request_arg(Arg, Conn) || Arg <- Args2],
+    Self = {Itf, self()},
     Fun = fun (NewId) ->
               NewArgs = NewArgs1 ++ [wl_wire:encode_object(NewId) | NewArgs2],
-              {#wl_request{sender=ParentId,opcode=OpCode,args=NewArgs}, Fds}
+              {Self,#wl_request{sender=ParentId,opcode=OpCode,args=NewArgs},Fds}
           end,
-    init_2(Parent, Fun, Itf, Ver, Conn, InitHandler).
+    init_new_id_1(Parent, Fun, Itf, Ver, Conn, InitHandler).
+
+init_new_id_1(Parent, Fun, Itf, Ver, Conn, {ok, _, _}=InitHandler) ->
+    Id = wl_connection:request_new_id(Conn, Fun),
+    init_ack(Parent, Id, Itf, Ver, Conn, InitHandler);
+
+init_new_id_1(Parent, _Fun, Itf, Ver, Conn, InitHandler) ->
+    init_ack(Parent, null, Itf, Ver, Conn, InitHandler).
 
 
-init_1(Parent, Id, Itf, Ver, Conn, {ok, Handler, HandlerState}) ->
-    ok = wl_connection:register(Conn, Id, Itf, self()),
+init_ack(Parent, Id, Itf, Ver, Conn, {ok, Handler, HandlerState}) ->
     proc_lib:init_ack(Parent, {ok, self()}),
     State = #state{ id=Id
                   , interface=Itf
@@ -94,22 +109,14 @@ init_1(Parent, Id, Itf, Ver, Conn, {ok, Handler, HandlerState}) ->
                   },
     loop(Parent, {Itf, self()}, State, []);
 
-init_1(Parent, _Id, _Itf, _Ver, _Conn, {stop, Reason}) ->
+init_ack(Parent, _Id, _Itf, _Ver, _Conn, {stop, Reason}) ->
     proc_lib:init_ack(Parent, {error, Reason}),
     exit(Reason);
 
-init_1(Parent, _Id, _Itf, _Ver, _Conn, Other) ->
+init_ack(Parent, _Id, _Itf, _Ver, _Conn, Other) ->
     Reason = {bad_return_value, Other},
     proc_lib:init_ack(Parent, {error, Reason}),
     exit(Reason).
-
-
-init_2(Parent, Fun, Itf, Ver, Conn, {ok, _, _}=InitHandler) ->
-    Id = wl_connection:request_new_id(Conn, Fun),
-    init_1(Parent, Id, Itf, Ver, Conn, InitHandler);
-
-init_2(Parent, _Fun, Itf, Ver, Conn, InitHandler) ->
-    init_1(Parent, null, Itf, Ver, Conn, InitHandler).
 
 
 init_handler(Parent, ItfVer, {Handler, Init}) ->
