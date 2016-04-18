@@ -2,6 +2,7 @@
 
 -export([ connect/0
         , connect/1
+        , disconnect/1
         , sync/1
         , globals/1
         , bind/2
@@ -25,6 +26,10 @@ connect(SocketPath) ->
         Error ->
             Error
     end.
+
+
+disconnect(Conn) ->
+    wl_connection:stop(Conn).
 
 
 sync(Conn) ->

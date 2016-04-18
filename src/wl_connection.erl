@@ -95,19 +95,24 @@ init({SocketPath, DisplayHandler}) ->
     case wl_object:start_link(1, {wl_display, 1}, self(), DisplayHandler) of
         {ok, Display} ->
             Socket = afunix:socket(),
-            ok = afunix:connect(Socket, SocketPath),
-            {ok, #state{ socket=Socket
-                       , display=Display
-                       , ids=maps:new()
-                       , pids=maps:new()
-                       , free_ids=[]
-                       , next_id=2
-                       , recv_data= <<>>
-                       , recv_fds= []
-                       }};
-        Error ->
-            Error
+            init_1(Display, Socket, afunix:connect(Socket, SocketPath));
+        {error, Reason} ->
+            {stop, Reason}
     end.
+
+init_1(Display, Socket, ok) ->
+    {ok, #state{ socket=Socket
+               , display=Display
+               , ids=maps:new()
+               , pids=maps:new()
+               , free_ids=[]
+               , next_id=2
+               , recv_data= <<>>
+               , recv_fds= []
+               }};
+
+init_1(_,_,{error, Reason}) ->
+    {stop, Reason}.
 
 
 handle_call({id_to_pid, Id}, _From, State) ->
