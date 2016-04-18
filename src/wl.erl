@@ -4,6 +4,7 @@
         , connect/1
         , sync/1
         , globals/1
+        , bind/2
         , bind/3
         ]).
 
@@ -45,6 +46,9 @@ globals(Conn) ->
     wl_object:call(Registry, globals).
 
 
+bind(Conn, Itf) ->
+    bind(Conn, Itf, wl_default_handler).
+
 bind(Conn, Itf, Handler) ->
     Registry = wl_connection:id_to_pid(Conn ,2),
     case wl_object:call(Registry, {globals, Itf}) of
@@ -55,6 +59,10 @@ bind(Conn, Itf, Handler) ->
         Values ->
             [bind_1(Registry, Itf, Name, Ver, Handler) || {Name, Ver} <- Values]
     end.
+
+
+bind_1(Registry, Itf, Name, Ver, Handler) when is_pid(Handler) ->
+    bind_1(Registry, Itf, Name, Ver, {wl_default_handler, Handler});
 
 bind_1(Registry, Itf, Name, Ver, Handler) ->
     V = min(Itf:version(), Ver),

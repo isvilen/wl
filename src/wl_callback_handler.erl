@@ -4,10 +4,10 @@
         , handle_event/3
         ]).
 
-init(_Version, {Pid, Data}) ->
+init(_, {Pid, Data}) ->
     {ok, {Pid, Data}};
 
-init(_Version, Pid) ->
+init(_, Pid) ->
     {ok, Pid}.
 
 

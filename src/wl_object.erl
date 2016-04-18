@@ -46,14 +46,14 @@ call(Pid, Request, Timeout) ->
 
 
 init(Parent, Id, Itf, Ver, Conn, Handler) ->
-    InitHandler = init_handler(Parent, Ver, Handler),
+    InitHandler = init_handler(Parent, {Itf,Ver}, Handler),
     init_1(Parent, Id, Itf, Ver, Conn, InitHandler).
 
 
 init_new_id(Parent, ParentId, _ParentVer, OpCode,
             {Args1, {new_id, {Itf, Ver, Handler}}, Args2},
             Fds, Conn) ->
-    InitHandler = init_handler(Parent, Ver, Handler),
+    InitHandler = init_handler(Parent, {Itf,Ver}, Handler),
     NewArgs1 = [request_arg(Arg, Conn) || Arg <- Args1],
     NewArgs2 = [request_arg(Arg, Conn) || Arg <- Args2],
     Fun = fun (NewId) ->
@@ -72,7 +72,7 @@ init_new_id(Parent, ParentId, ParentVer, OpCode,
             {Args1, {new_id, Itf, Handler}, Args2},
             Fds, Conn) ->
     Ver = min(Itf:version(), ParentVer),
-    InitHandler = init_handler(Parent, Ver, Handler),
+    InitHandler = init_handler(Parent, {Itf,Ver}, Handler),
     NewArgs1 = [request_arg(Arg, Conn) || Arg <- Args1],
     NewArgs2 = [request_arg(Arg, Conn) || Arg <- Args2],
     Fun = fun (NewId) ->
@@ -112,8 +112,8 @@ init_2(Parent, _Fun, Itf, Ver, Conn, InitHandler) ->
     init_1(Parent, null, Itf, Ver, Conn, InitHandler).
 
 
-init_handler(Parent, Ver, {Handler, Init}) ->
-    try Handler:init(Ver, Init) of
+init_handler(Parent, ItfVer, {Handler, Init}) ->
+    try Handler:init(ItfVer, Init) of
         {ok, HandlerState} -> {ok, Handler, HandlerState};
         Other              -> Other
     catch
@@ -122,8 +122,8 @@ init_handler(Parent, Ver, {Handler, Init}) ->
             exit(Reason)
     end;
 
-init_handler(Parent, Ver, Handler) ->
-    try Handler:init(Ver) of
+init_handler(Parent, ItfVer, Handler) ->
+    try Handler:init(ItfVer) of
         {ok, HandlerState} -> {ok, Handler, HandlerState};
         Other              -> Other
     catch
