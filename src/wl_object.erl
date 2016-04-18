@@ -202,7 +202,7 @@ handle_request_new_id(Code, Args, Fds, State) ->
 
 
 request_arg({id, Pid}, Conn) ->
-    wl_connection:pid_to_id(Conn, Pid);
+    wl_wire:encode_object(wl_connection:pid_to_id(Conn, Pid));
 
 request_arg(Arg, _) ->
     Arg.
