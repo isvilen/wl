@@ -2,6 +2,7 @@
 -behaviour(gen_server).
 
 -export([ start_link/2
+        , stop/1
         , display/1
         , register/4
         , unregister/2
@@ -24,6 +25,10 @@
 
 start_link(SocketPath, DisplayHandler) ->
     gen_server:start_link(?MODULE, {SocketPath, DisplayHandler}, []).
+
+
+stop(ConnPid) ->
+    gen_server:stop(ConnPid).
 
 
 display(ConnPid) ->
