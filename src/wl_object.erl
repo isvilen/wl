@@ -155,9 +155,9 @@ loop(Parent, Name, State, Dbg) ->
             loop(Parent, Name, NewState, Dbg2);
 
         {'$request_destructor$', Code, Args, Fds} = Msg->
-            sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
+            Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
             NewState = handle_request(Code, Args, Fds, State),
-            terminate(normal, NewState);
+            zombie(Parent, Name, NewState, Dbg1);
 
         {'$event$', Event, Args} = Msg ->
             Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
@@ -180,10 +180,15 @@ loop(Parent, Name, State, Dbg) ->
     end.
 
 
-terminate(Reason, #state{handler=Handler}=State) ->
-    catch Handler:terminate(State#state.handler_state),
-    wl_connection:unregister(State#state.connection, self()),
-    exit(Reason).
+zombie(Parent, Name, State, Dbg) ->
+    receive
+      {system, From, Msg} ->
+        sys:handle_system_msg(Msg, From, Parent, ?MODULE, Dbg,
+                              {fun zombie/4, Name, State});
+      Msg ->
+        Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
+        zombie(Parent, Name, State, Dbg1)
+    end.
 
 
 handle_request(Code, Args, Fds, State) ->
@@ -266,4 +271,6 @@ system_continue(Parent, Debug, {Loop, Name, Data}) ->
 
 
 system_terminate(Reason, _Parent, _Debug, {_Loop, _Name, State}) ->
-    terminate(Reason, State).
+    catch (State#state.handler):terminate(State#state.handler_state),
+    wl_connection:unregister(State#state.connection, self()),
+    exit(Reason).
