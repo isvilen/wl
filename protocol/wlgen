@@ -265,26 +265,30 @@ notify_fun_clause(#event{name=Name,evtcode=Code,args=Args}) ->
 
 notify_fun_clause(Name, Code, {[], {[], []}, []}) ->
     ?Q(["(Pid, _@Code@, <<>>, Fds) ->"
-       ,"  Pid ! {'$event$', _@Name@, []}, Fds"
+       ,"  Pid ! {'$event$', _@Name@, []},"
+       ,"  {[], Fds}"
        ]);
 
 notify_fun_clause(Name, Code, {_, {[], []}, FdsVars}) ->
     ?Q(["(Pid, _@Code@, <<>>, [_@@FdsVars | Rest]) ->"
-       ,"  Pid ! {'$event$', _@Name@, [_@@FdsVars]}, Rest"
+       ,"  Pid ! {'$event$', _@Name@, [_@@FdsVars]},"
+       ,"  {[], Rest}"
        ]);
 
 notify_fun_clause(Name, Code, {AllVars, {Args, ArgsVars}, []}) ->
-    DecArgs = decode_args_ast(Args, ArgsVars, merl:var("Args")),
+    {DecArgs, NewObjects} = decode_args_ast(Args, ArgsVars, merl:var("Args")),
     ?Q(["(Pid, _@Code@, Args, Fds) ->"
        ,"  _@@DecArgs,"
-       ,"  Pid ! {'$event$', _@Name@, [_@@AllVars]}, Fds"
+       ,"  Pid ! {'$event$', _@Name@, [_@@AllVars]},"
+       ,"  {[_@@NewObjects], Fds}"
        ]);
 
 notify_fun_clause(Name, Code, {AllVars, {Args, ArgsVars}, FdsVars}) ->
-    DecArgs = decode_args_ast(Args, ArgsVars, merl:var("Args")),
+    {DecArgs, NewObjects} = decode_args_ast(Args, ArgsVars, merl:var("Args")),
     ?Q(["(Pid, _@Code@, Args, [_@@FdsVars | Rest]) ->"
        ,"  _@@DecArgs,"
-       ,"  Pid ! {'$event$', _@Name@, [_@@AllVars]}, Rest"
+       ,"  Pid ! {'$event$', _@Name@, [_@@AllVars]},"
+       ,"  {[_@@NewObjects], Rest}"
        ]).
 
 
@@ -454,18 +458,26 @@ encode_arg_ast(#arg{type=array}, V) ->
 
 
 decode_args_ast(Args, Vars, In) ->
-    decode_args_ast(Args, Vars, In, []).
+    decode_args_ast(Args, Vars, In, [], []).
 
-decode_args_ast([], [], _, Acc) ->
-    lists:reverse(Acc);
+decode_args_ast([], [], _, ArgAcc, ObjectAcc) ->
+    {lists:reverse(ArgAcc), ObjectAcc};
 
-decode_args_ast([A], [V], In, Acc) ->
-    D = decode_last_arg_ast(A, V, In),
-    lists:reverse([D | Acc]);
+decode_args_ast([A], [V], In, ArgAcc, ObjectAcc) ->
+    case decode_last_arg_ast(A, V, In) of
+        {Arg, Object} ->
+            {lists:reverse([Arg | ArgAcc]), [Object | ObjectAcc]};
+        Arg ->
+            {lists:reverse([Arg | ArgAcc]), ObjectAcc}
+    end;
 
-decode_args_ast([A | As], [V | Vs], In, Acc) ->
-    {D, Rest} = decode_arg_ast(A, V, In, length(Acc)),
-    decode_args_ast(As, Vs, Rest, [D | Acc]).
+decode_args_ast([A | As], [V | Vs], In, ArgAcc, ObjectAcc) ->
+    case decode_arg_ast(A, V, In, length(ArgAcc)) of
+        {Arg, Object, Rest} ->
+            decode_args_ast(As, Vs, Rest, [Arg | ArgAcc], [Object | ObjectAcc]);
+        {Arg, Rest} ->
+            decode_args_ast(As, Vs, Rest, [Arg | ArgAcc], ObjectAcc)
+    end.
 
 
 decode_arg_ast(#arg{type=int, enum=undefined}, V, Args, N) ->
@@ -494,8 +506,10 @@ decode_arg_ast(#arg{type=new_id, interface=Itf}, V, Args, N) ->
     Rest = var_ast("Args", N),
     V1 = var_ast(V,1),
     {?Q(["{_@V1, _@Rest} = wl_wire:decode_object(_@Args),"
-        ,"_@V = {new_id, _@Itf@, _@V1}"])
-    , Rest};
+        ,"_@V = wl_object:start_child(Pid, _@Itf@, _@V1)"])
+    ,?Q("{_@V1, _@Itf@, _@V}")
+    ,Rest
+    };
 
 decode_arg_ast(#arg{type=object}, V, Args, N) ->
     Rest = var_ast("Args", N),
@@ -535,8 +549,10 @@ decode_last_arg_ast(#arg{type=uint, enum=Enum}, V, Args) ->
 
 decode_last_arg_ast(#arg{type=new_id, interface=Itf}, V, Args) ->
     V1 = var_ast(V,1),
-    ?Q(["{_@V1, <<>>} = wl_wire:decode_object(_@Args),"
-       ,"_@V = {new_id, _@Itf@, _@V1}"]);
+    {?Q(["{_@V1, <<>>} = wl_wire:decode_object(_@Args),"
+        ,"_@V = wl_object:start_child(Pid, _@Itf@, _@V1)"])
+    ,?Q("{_@V1, _@Itf@, _@V}")
+    };
 
 decode_last_arg_ast(#arg{type=object}, V, Args) ->
     V1 = var_ast(V,1),

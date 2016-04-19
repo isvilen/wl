@@ -3,6 +3,7 @@
 -export([ init/1
         , init/2
         , handle_event/3
+        , new_handler/3
         ]).
 
 init({Itf, Version}) ->
@@ -26,3 +27,7 @@ handle_event(Event, [], {Itf, _, Pid}) ->
 handle_event(Event, Args, {Itf, _, Pid}) ->
     Pid ! {Itf, self(), Event, Args},
     ok.
+
+
+new_handler(_Itf, _Ver, {_,_,Pid}) ->
+    {?MODULE, Pid}.

@@ -9,6 +9,7 @@
 % internal API
 -export([ init/6
         , init_new_id/7
+        , start_child/3
         , system_continue/3
         , system_terminate/4
         ]).
@@ -18,6 +19,10 @@
 
 start_link(Id, {Itf, Ver}, Conn, Handler) ->
     proc_lib:start_link(?MODULE, init, [self(), Id, Itf, Ver, Conn, Handler]).
+
+
+start_child(Pid, Interface, Id) ->
+    call(Pid, {'$start_child$', Interface, Id}).
 
 
 notify(#wl_event{sender={Mod, Pid},evtcode=Code,args=Args}, Fds) ->
@@ -50,7 +55,6 @@ init(Parent, Id, Itf, Ver, Conn, Handler) ->
     init_1(Parent, Id, Itf, Ver, Conn, InitHandler).
 
 init_1(Parent, Id, Itf, Ver, Conn, {ok, _, _} = InitHandler) ->
-    ok = wl_connection:register(Conn, Id, Itf, self()),
     init_ack(Parent, Id, Itf, Ver, Conn, InitHandler);
 
 init_1(Parent, Id, Itf, Ver, Conn, InitHandler) ->
@@ -234,13 +238,8 @@ handle_event(Event, Args, #state{handler=Handler}=State) ->
     end.
 
 
-event_arg({new_id, Itf, Id}, #state{handler=Handler}=State) ->
-    Ver = min(Itf:version(), State#state.version),
-    NewHandler = Handler:new_handler(Itf, Ver, State#state.handler_state),
-    case start_link(Id, {Itf, Ver}, State#state.connection, NewHandler) of
-        {ok, Pid}       -> Pid;
-        {error, Reason} -> exit(Reason)
-    end;
+event_arg({id, null}, _) ->
+    null;
 
 event_arg({id, Id}, #state{connection=Conn}) ->
     wl_connection:id_to_pid(Conn, Id);
@@ -248,6 +247,14 @@ event_arg({id, Id}, #state{connection=Conn}) ->
 event_arg(Arg, _) ->
     Arg.
 
+
+handle_call({'$start_child$', Itf, Id}, #state{handler=Handler}=State) ->
+    Ver = min(Itf:version(), State#state.version),
+    NewHandler = Handler:new_handler(Itf, Ver, State#state.handler_state),
+    case start_link(Id, {Itf, Ver}, State#state.connection, NewHandler) of
+        {ok, Pid}       -> {Pid, State};
+        {error, Reason} -> exit(Reason)
+    end;
 
 handle_call(Request, #state{handler=Handler}=State) ->
     case Handler:handle_call(Request, State#state.handler_state) of
@@ -272,5 +279,5 @@ system_continue(Parent, Debug, {Loop, Name, Data}) ->
 
 system_terminate(Reason, _Parent, _Debug, {_Loop, _Name, State}) ->
     catch (State#state.handler):terminate(State#state.handler_state),
-    wl_connection:unregister(State#state.connection, self()),
+    wl_connection:free_id(State#state.connection, State#state.id),
     exit(Reason).

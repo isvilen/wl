@@ -4,8 +4,7 @@
 -export([ start_link/2
         , stop/1
         , display/1
-        , register/4
-        , unregister/2
+        , free_id/2
         , request/3
         , request_new_id/2
         , id_to_pid/2
@@ -35,12 +34,8 @@ display(ConnPid) ->
     gen_server:call(ConnPid, get_display).
 
 
-register(ConnPid, Id, Module, Pid) ->
-    gen_server:cast(ConnPid, {register, Id, Module, Pid}).
-
-
-unregister(ConnPid, Pid) ->
-    gen_server:cast(ConnPid, {unregister, Pid}).
+free_id(ConnPid, Id) ->
+    gen_server:cast(ConnPid, {free_id, Id}).
 
 
 request(ConnPid, Request, Fds) ->
@@ -103,8 +98,8 @@ init({SocketPath, DisplayHandler}) ->
 init_1(Display, Socket, ok) ->
     {ok, #state{ socket=Socket
                , display=Display
-               , ids=maps:new()
-               , pids=maps:new()
+               , ids=maps:from_list([{1, {wl_display, Display}}])
+               , pids=maps:from_list([{Display, {wl_display, 1}}])
                , free_ids=[]
                , next_id=2
                , recv_data= <<>>
@@ -139,11 +134,8 @@ handle_call(get_display, _From, #state{display=Display}=State) ->
 handle_call(_Request, _From, State) ->
     {noreply, State}.
 
-handle_cast({register, Id, Module, Pid}, State) ->
-    {noreply, register_object(Id, Module, Pid, State)};
-
-handle_cast({unregister, Pid}, State) ->
-    {noreply, unregister_object(Pid, State)};
+handle_cast({free_id, Id}, State) ->
+    {noreply, handle_free_id(Id, State)};
 
 handle_cast({request, Request, Fds}, State) ->
     {noreply, send_request(Request, Fds, State)};
@@ -202,20 +194,28 @@ handle_pid_to_id(Pid, #state{pids=Pids}) ->
     end.
 
 
+handle_free_id(Id, #state{pids=Pids, ids=Ids, free_ids=FreeIds}=State) ->
+    case maps:get(Id, Ids, undefined) of
+        undefined -> State;
+        {_, Pid} -> State#state{ pids=maps:remove(Pid, Pids)
+                               , ids=maps:remove(Id, Ids)
+                               , free_ids=[Id | FreeIds]
+                               }
+    end.
+
+
+
 register_object(Id, Module, Pid, #state{pids=Pids, ids=Ids}=State) ->
     State#state{ pids=maps:put(Pid, {Module, Id}, Pids)
                , ids=maps:put(Id, {Module, Pid}, Ids)
                }.
 
 
-unregister_object(Pid, #state{pids=Pids, ids=Ids, free_ids=FreeIds}=State) ->
-    case maps:get(Pid, Pids, undefined) of
-        undefined -> State;
-        {_, Id} -> State#state{ pids=maps:remove(Pid, Pids)
-                              , ids=maps:remove(Id, Ids)
-                              , free_ids=[Id | FreeIds]
-                              }
-    end.
+register_objects([], State) ->
+    State;
+
+register_objects([{Id, Module, Pid} | Rest], State) ->
+    register_objects(Rest, register_object(Id, Module, Pid, State)).
 
 
 send_request(Request, [], #state{socket=S}=State) ->
@@ -260,8 +260,10 @@ handle_recv_data(#state{recv_data=Data,recv_fds=Fds}=State) ->
     case wl_wire:decode_event(Data) of
         {#wl_event{sender=Id}=Event, NewData} ->
             {ok, ModPid} = handle_id_to_module_pid(Id, State),
-            NewFds = wl_object:notify(Event#wl_event{sender=ModPid}, Fds),
-            handle_recv_data(State#state{recv_data=NewData, recv_fds=NewFds});
+            Event1 = Event#wl_event{sender=ModPid},
+            {NewObjects, NewFds} = wl_object:notify(Event1, Fds),
+            State1 = register_objects(NewObjects, State),
+            handle_recv_data(State1#state{recv_data=NewData, recv_fds=NewFds});
         incomplete ->
             State
     end.
