@@ -212,42 +212,20 @@ interface_api(Rs, Evts, Enms) ->
 requests_api(Rs) ->
     [request_api(R) || R <- Rs].
 
+request_api(#request{name=Name,opcode=Code,args=Args,type=Type}) ->
+    request_api(Type, Name, Code, args_to_vars(Args)).
 
-request_api(#request{name=Name,opcode=Code,args=Args,type=destructor}) ->
-    request_api(Name, Code, args_to_vars(Args), '$request_destructor$');
-
-request_api(#request{name=Name,opcode=Code,args=Args,type=undefined}) ->
-    case has_new_id_arg(Args) of
-        true  ->
-            request_new_id_api(Name, Code, args_to_vars(Args));
-        false ->
-            request_api(Name, Code, args_to_vars(Args), '$request$')
-    end.
-
-request_api(Name, Code, {AllVars, {Args,ArgsVars}, FdsVars}, Type) ->
+request_api(destructor, Name, Code, {AllVars, {Args,ArgsVars}, FdsVars}) ->
     EncArgs = encode_args_ast(Args, ArgsVars),
     ?Q(["'@Name@'(Pid, _@@AllVars) ->"
-       ,"    Pid ! {_@Type@, _@Code@, _@EncArgs, [_@@FdsVars]},"
-       ,"    ok."
-       ]).
+       ,"    wl_object:request(Pid, _@Code@, _@EncArgs, [_@@FdsVars]),"
+       ,"    wl_object:destroy(Pid)."
+       ]);
 
-
-request_new_id_api(Name, Code, {AllVars, {Args,ArgsVars}, FdsVars}) ->
+request_api(_Type, Name, Code, {AllVars, {Args,ArgsVars}, FdsVars}) ->
     EncArgs = encode_args_ast(Args, ArgsVars),
     ?Q(["'@Name@'(Pid, _@@AllVars) ->"
-       ,"    Mref = erlang:monitor(process, Pid),"
-       ,"    Request = {_@Code@, _@EncArgs, [_@@FdsVars]},"
-       ,"    Pid ! {'$request_new_id$', {self(), Mref}, Request},"
-       ,"    receive"
-       ,"        {Mref, Reply} ->"
-       ,"            erlang:demonitor(Mref, [flush]),"
-       ,"            Reply;"
-       ,"        {'DOWN', Mref, _, _, Reason} ->"
-       ,"            exit(Reason)"
-       ,"    after 5000 ->"
-       ,"        erlang:demonitor(Mref, [flush]),"
-       ,"        exit(timeout)"
-       ,"    end."
+       ,"    wl_object:request(Pid, _@Code@, _@EncArgs, [_@@FdsVars])."
        ]).
 
 

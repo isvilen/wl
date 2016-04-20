@@ -6,11 +6,7 @@
         , display/1
         , free_id/2
         , request/3
-        , request_new_id/2
         , id_to_pid/2
-        , id_to_module/2
-        , id_to_module_pid/2
-        , pid_to_id/2
         , init/1
         , handle_call/3
         , handle_cast/2
@@ -39,11 +35,7 @@ free_id(ConnPid, Id) ->
 
 
 request(ConnPid, Request, Fds) ->
-    gen_server:cast(ConnPid, {request, Request, Fds}).
-
-
-request_new_id(ConnPid, RequestFun) ->
-    gen_server:call(ConnPid, {request_new_id, RequestFun}).
+    gen_server:call(ConnPid, {request, Request, Fds}).
 
 
 id_to_pid(ConnPid, Id) ->
@@ -53,30 +45,7 @@ id_to_pid(ConnPid, Id) ->
     end.
 
 
-id_to_module(ConnPid, Id) ->
-    case gen_server:call(ConnPid, {id_to_module, Id}) of
-        {ok, Mod}       -> Mod;
-        {error, Reason} -> exit(Reason)
-    end.
-
-
-id_to_module_pid(ConnPid, Id) ->
-    case gen_server:call(ConnPid, {id_to_module_pid, Id}) of
-        {ok, ModPid}    -> ModPid;
-        {error, Reason} -> exit(Reason)
-    end.
-
-
-pid_to_id(ConnPid, Pid) ->
-    case gen_server:call(ConnPid, {pid_to_id, Pid}) of
-        {ok, Id}        -> Id;
-        {error, Reason} -> exit(Reason)
-    end.
-
-
-
 -record(state,{ socket
-              , display
               , ids
               , pids
               , free_ids
@@ -97,7 +66,6 @@ init({SocketPath, DisplayHandler}) ->
 
 init_1(Display, Socket, ok) ->
     {ok, #state{ socket=Socket
-               , display=Display
                , ids=maps:from_list([{1, {wl_display, Display}}])
                , pids=maps:from_list([{Display, {wl_display, 1}}])
                , free_ids=[]
@@ -111,34 +79,19 @@ init_1(_,_,{error, Reason}) ->
 
 
 handle_call({id_to_pid, Id}, _From, State) ->
-    {reply, handle_id_to_pid(Id, State), State};
+    handle_id_to_pid(Id, State);
 
-handle_call({id_to_module, Id}, _From, State) ->
-    {reply, handle_id_to_module(Id, State), State};
+handle_call({request, Request, Fds}, _From, State) ->
+    handle_request(Request, Fds, State);
 
-handle_call({id_to_module_pid, Id}, _From, State) ->
-    {reply, handle_id_to_module_pid(Id, State), State};
-
-handle_call({pid_to_id, Pid}, _From, State) ->
-    {reply, handle_pid_to_id(Pid, State), State};
-
-handle_call({request_new_id, RequestFun}, _From, State) ->
-    {NewId, State1} = new_id(State),
-    {{Module, NewPid}, Request, Fds} = RequestFun(NewId),
-    State2 = register_object(NewId, Module, NewPid, State1),
-    {reply, NewId, send_request(Request, Fds, State2)};
-
-handle_call(get_display, _From, #state{display=Display}=State) ->
-    {reply, Display, State};
+handle_call(get_display, _From, State) ->
+    handle_get_display(State);
 
 handle_call(_Request, _From, State) ->
     {noreply, State}.
 
 handle_cast({free_id, Id}, State) ->
     {noreply, handle_free_id(Id, State)};
-
-handle_cast({request, Request, Fds}, State) ->
-    {noreply, send_request(Request, Fds, State)};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -159,39 +112,19 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 
-new_id(#state{free_ids=[],next_id=NextId}=State) ->
-    {NextId, State#state{next_id=NextId+1}};
-
-new_id(#state{free_ids=[Id|Ids]}=State) ->
-    {Id, State#state{free_ids=Ids}}.
-
-
-handle_id_to_pid(Id, #state{ids=Ids}) ->
+handle_id_to_pid(Id, #state{ids=Ids}=State) ->
     case maps:get(Id, Ids, undefined) of
-        {_, Pid}  -> {ok, Pid};
-        undefined -> {error, {invalid_wl_id, Id}}
+        {_, Pid}  -> {reply, {ok, Pid}, State};
+        undefined -> {reply, {error, {invalid_wl_id, Id}}, State}
     end.
 
-
-handle_id_to_module(Id, #state{ids=Ids}) ->
-    case maps:get(Id, Ids, undefined) of
-        {Mod, _}  -> {ok, Mod};
-        undefined -> {error, {invalid_wl_id, Id}}
-    end.
+handle_request(Request, Fds, State) ->
+    {Reply, Args, NewState} = handle_request_args(Request, State),
+    {reply, Reply, send_request(Request#wl_request{args=Args}, Fds, NewState)}.
 
 
-handle_id_to_module_pid(Id, #state{ids=Ids}) ->
-    case maps:get(Id, Ids, undefined) of
-        undefined -> {error, {invalid_wl_id, Id}};
-        ModPid    -> {ok, ModPid}
-    end.
-
-
-handle_pid_to_id(Pid, #state{pids=Pids}) ->
-    case maps:get(Pid, Pids, undefined) of
-        undefined -> {error, {invalid_wl_pid, Pid}};
-        {_, Id}   -> {ok, Id}
-    end.
+handle_get_display(#state{ids=#{1:={_,Display}}}=State) ->
+    {reply, Display, State}.
 
 
 handle_free_id(Id, #state{pids=Pids, ids=Ids, free_ids=FreeIds}=State) ->
@@ -204,18 +137,46 @@ handle_free_id(Id, #state{pids=Pids, ids=Ids, free_ids=FreeIds}=State) ->
     end.
 
 
+handle_request_args(#wl_request{sender=Id,args={Args1, Arg, Args2}},
+                    #state{ids=Ids,pids=Pids}=State) ->
+    {NewId, State1} = new_id(State),
+    {Itf, Handler, NewArgs} = handle_new_id_args(Args1, Arg, Args2, NewId, Pids),
+    {_, ParentPid} = maps:get(Id, Ids),
+    Pid = wl_object:start_child(ParentPid, Itf, NewId, Handler),
+    {Pid, NewArgs, register_object(NewId, Itf, Pid, State1)};
 
-register_object(Id, Module, Pid, #state{pids=Pids, ids=Ids}=State) ->
-    State#state{ pids=maps:put(Pid, {Module, Id}, Pids)
-               , ids=maps:put(Id, {Module, Pid}, Ids)
-               }.
+handle_request_args(#wl_request{args=Args}, #state{pids=Pids}=State)->
+    {ok, [request_arg(Arg, Pids) || Arg <- Args], State}.
 
 
-register_objects([], State) ->
-    State;
+handle_new_id_args(Args1, {new_id, {Itf, Ver, Handler}}, Args2, NewId, Pids) ->
+    NewArgs1 = [request_arg(Arg, Pids) || Arg <- Args1],
+    NewArgs2 = [request_arg(Arg, Pids) || Arg <- Args2],
+    NewIdArgs = [ wl_wire:encode_string(list_to_binary(atom_to_list(Itf)))
+                , wl_wire:encode_uint(Ver)
+                , wl_wire:encode_object(NewId)
+                ],
+    {Itf, Handler, NewArgs1 ++ NewIdArgs ++ NewArgs2};
 
-register_objects([{Id, Module, Pid} | Rest], State) ->
-    register_objects(Rest, register_object(Id, Module, Pid, State)).
+handle_new_id_args(Args1, {new_id, Itf, Handler}, Args2, NewId, Pids) ->
+    NewArgs1 = [request_arg(Arg, Pids) || Arg <- Args1],
+    NewArgs2 = [request_arg(Arg, Pids) || Arg <- Args2],
+    {Itf, Handler, NewArgs1 ++ [wl_wire:encode_object(NewId) | NewArgs2]}.
+
+
+request_arg({id, Pid}, Pids) ->
+    {_, Id} = maps:get(Pid, Pids),
+    wl_wire:encode_object(Id);
+
+request_arg(Arg, _) ->
+    Arg.
+
+
+new_id(#state{free_ids=[],next_id=NextId}=State) ->
+    {NextId, State#state{next_id=NextId+1}};
+
+new_id(#state{free_ids=[Id|Ids]}=State) ->
+    {Id, State#state{free_ids=Ids}}.
 
 
 send_request(Request, [], #state{socket=S}=State) ->
@@ -237,14 +198,14 @@ notify_read(State) ->
 
 
 socket_read(#state{socket=S}=State) ->
-    socket_read(afunix:recv(S, 1000), State).
+    socket_read(afunix:recv(S, 1024), State).
 
 socket_read({ok, Bytes}, #state{recv_data=Data}=State) ->
     NewData = <<Data/binary,Bytes/binary>>,
     socket_read(handle_recv_data(State#state{recv_data=NewData}));
 
 socket_read({ok, Fds, Bytes}, #state{recv_data=Data, recv_fds=OldFds}=State) ->
-    NewFds=OldFds ++ Fds,
+    NewFds = OldFds ++ Fds,
     NewData = <<Data/binary,Bytes/binary>>,
     socket_read(handle_recv_data(State#state{ recv_data=NewData
                                             , recv_fds=NewFds}));
@@ -256,14 +217,28 @@ socket_read({error, Error}, _State) ->
     exit({socket_error, Error}).
 
 
-handle_recv_data(#state{recv_data=Data,recv_fds=Fds}=State) ->
-    case wl_wire:decode_event(Data) of
-        {#wl_event{sender=Id}=Event, NewData} ->
-            {ok, ModPid} = handle_id_to_module_pid(Id, State),
-            Event1 = Event#wl_event{sender=ModPid},
-            {NewObjects, NewFds} = wl_object:notify(Event1, Fds),
-            State1 = register_objects(NewObjects, State),
-            handle_recv_data(State1#state{recv_data=NewData, recv_fds=NewFds});
-        incomplete ->
-            State
-    end.
+handle_recv_data(#state{recv_data=Data}=State) ->
+    handle_event(wl_wire:decode_event(Data), State).
+
+
+handle_event({#wl_event{sender=Id}=Event, Data}, #state{recv_fds=Fds}=State) ->
+    ModPid = maps:get(Id, State#state.ids),
+    {NewObjects, NewFds} = wl_object:notify(Event#wl_event{sender=ModPid}, Fds),
+    State1 = register_objects(NewObjects, State),
+    handle_recv_data(State1#state{recv_data=Data, recv_fds=NewFds});
+
+handle_event(incomplete, State) ->
+    State.
+
+
+register_object(Id, Module, Pid, #state{pids=Pids, ids=Ids}=State) ->
+    State#state{ pids=maps:put(Pid, {Module, Id}, Pids)
+               , ids=maps:put(Id, {Module, Pid}, Ids)
+               }.
+
+
+register_objects([], State) ->
+    State;
+
+register_objects([{Id, Module, Pid} | Rest], State) ->
+    register_objects(Rest, register_object(Id, Module, Pid, State)).
