@@ -132,9 +132,13 @@ loop(Parent, Name, State, Dbg) ->
             NewState = handle_event(Event, Args, State),
             loop(Parent, Name, NewState, Dbg1);
 
-        '$destroy$' = Msg->
+        '$destroy$' = Msg when State#state.id < ?WL_SERVER_ID_START ->
             Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
             zombie(Parent, Name, State, Dbg1);
+
+        '$destroy$' = Msg ->
+            sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
+            terminate(normal, State);
 
         {system, From, Msg} ->
             sys:handle_system_msg(Msg, From, Parent, ?MODULE, Dbg,
@@ -154,6 +158,16 @@ zombie(Parent, Name, State, Dbg) ->
         Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
         zombie(Parent, Name, State, Dbg1)
     end.
+
+
+terminate(Reason, #state{id=Id}=State) when Id < ?WL_SERVER_ID_START ->
+    catch (State#state.handler):terminate(State#state.handler_state),
+    wl_connection:free_id(State#state.connection, State#state.id),
+    exit(Reason);
+
+terminate(Reason, State) ->
+    catch (State#state.handler):terminate(State#state.handler_state),
+    exit(Reason).
 
 
 handle_event(Event, Args, #state{handler=Handler}=State) ->
@@ -220,6 +234,4 @@ system_continue(Parent, Debug, {Loop, Name, Data}) ->
 
 
 system_terminate(Reason, _Parent, _Debug, {_Loop, _Name, State}) ->
-    catch (State#state.handler):terminate(State#state.handler_state),
-    wl_connection:free_id(State#state.connection, State#state.id),
-    exit(Reason).
+    terminate(Reason, State).
