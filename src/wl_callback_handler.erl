@@ -1,13 +1,13 @@
 -module(wl_callback_handler).
 
--export([ init/2
+-export([ init/3
         , handle_event/3
         ]).
 
-init(_, {Pid, Data}) ->
+init(_Parent, _ItfVer, {Pid, Data}) ->
     {ok, {Pid, Data}};
 
-init(_, Pid) ->
+init(_Parent, _ItfVer, Pid) ->
     {ok, Pid}.
 
 

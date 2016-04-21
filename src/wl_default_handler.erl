@@ -1,16 +1,16 @@
 -module(wl_default_handler).
 
--export([ init/1
-        , init/2
+-export([ init/2
+        , init/3
         , handle_event/3
-        , new_handler/3
+        , new_handler/2
         ]).
 
-init({Itf, Version}) ->
+init(_Parent, {Itf, Version}) ->
     {ok, {Itf, Version, undefined}}.
 
 
-init({Itf, Version}, Pid) ->
+init(_Parent, {Itf, Version}, Pid) ->
     {ok, {Itf, Version, Pid}}.
 
 
@@ -29,5 +29,5 @@ handle_event(Event, Args, {Itf, _, Pid}) ->
     ok.
 
 
-new_handler(_Itf, _Ver, {_,_,Pid}) ->
+new_handler(_ItfVer, {_,_,Pid}) ->
     {?MODULE, Pid}.

@@ -98,7 +98,7 @@ init_ack(Parent, _Id, _Itf, _Ver, _Conn, Other) ->
 
 
 init_handler(Parent, ItfVer, {Handler, Init}) ->
-    try Handler:init(ItfVer, Init) of
+    try Handler:init(Parent, ItfVer, Init) of
         {ok, HandlerState} -> {ok, Handler, HandlerState};
         Other              -> Other
     catch
@@ -108,7 +108,7 @@ init_handler(Parent, ItfVer, {Handler, Init}) ->
     end;
 
 init_handler(Parent, ItfVer, Handler) ->
-    try Handler:init(ItfVer) of
+    try Handler:init(Parent, ItfVer) of
         {ok, HandlerState} -> {ok, Handler, HandlerState};
         Other              -> Other
     catch
@@ -173,14 +173,8 @@ terminate(Reason, State) ->
 handle_event(Event, Args, #state{handler=Handler}=State) ->
     NewArgs = [event_arg(Arg, State) || Arg <- Args],
     case Handler:handle_event(Event, NewArgs, State#state.handler_state) of
-        ok ->
-            State;
-        {new_state, NewHandlerState} ->
-            State#state{handler_state=NewHandlerState};
-        {delete_id, Id, NewHandlerState} ->
-            Pid = wl_connection:id_to_pid(State#state.connection, Id),
-            ok = proc_lib:stop(Pid),
-            State#state{handler_state=NewHandlerState}
+        ok                        -> State;
+        {new_state, HandlerState} -> State#state{handler_state=HandlerState}
     end.
 
 
@@ -198,9 +192,9 @@ handle_call('$get_id_conn$', #state{id=Id,connection=Conn}=State) ->
     {{Id, Conn}, State};
 
 handle_call({'$start_child$', Itf, Id}, #state{handler=Handler}=State) ->
-    Ver = min(Itf:version(), State#state.version),
-    NewHandler = Handler:new_handler(Itf, Ver, State#state.handler_state),
-    case start_link(Id, {Itf, Ver}, State#state.connection, NewHandler) of
+    ItfVer = {Itf, min(Itf:version(), State#state.version)},
+    NewHandler = Handler:new_handler(ItfVer, State#state.handler_state),
+    case start_link(Id, ItfVer, State#state.connection, NewHandler) of
         {ok, Pid}       -> {Pid, State};
         {error, Reason} -> exit(Reason)
     end;

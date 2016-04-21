@@ -1,11 +1,11 @@
 -module(wl_registry_handler).
--export([ init/1
+-export([ init/2
         , handle_event/3
         , handle_call/2
         ]).
 
 
-init(_) ->
+init(_Parent, _ItfVer) ->
     {ok, #{}}.
 
 
