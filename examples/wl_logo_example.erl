@@ -1,4 +1,4 @@
--module(wl_logo).
+-module(wl_logo_example).
 -export([main/0]).
 
 -define(W,266).
