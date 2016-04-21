@@ -70,7 +70,7 @@ bind_1(Registry, Itf, Name, Ver, Handler) when is_pid(Handler) ->
     bind_1(Registry, Itf, Name, Ver, {wl_default_handler, Handler});
 
 bind_1(Registry, Itf, Name, Ver, Handler) ->
-    V = min(Itf:version(), Ver),
+    V = min(Itf:interface_info(version), Ver),
     wl_registry:bind(Registry, Name, {Itf, V, Handler}).
 
 

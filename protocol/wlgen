@@ -49,18 +49,11 @@ generate(Itf, Ver, Data) ->
 
     ItfExports = interface_exports(Rs, Evts),
 
-    RsInfo = requests_info(Rs),
-    EvtsInfo = events_info(Evts),
-    EnmsInfo = enums_info(Enms),
-
     [ ?Q("-module('@Itf@').")
-    , ?Q("-export([version/0,requests/0,events/0,enums/0]).")
+    , ?Q("-export([interface_info/0,interface_info/1]).")
     , ?Q("-export(['@_@ItfExports'/0]).")
-    , ?Q("version() -> _@Ver@.")
-    , ?Q("requests() -> _@RsInfo@.")
-    , ?Q("events() -> _@EvtsInfo@.")
-    , ?Q("enums() -> _@EnmsInfo@.")
-    ] ++ interface_api(Rs, Evts, Enms).
+    ] ++ interface_info(Ver, Rs, Evts, Enms)
+      ++ interface_api(Rs, Evts, Enms).
 
 
 parse_interface(Data) ->
@@ -203,6 +196,25 @@ events_export([]) ->
     [];
 events_export(_) ->
     [erl_syntax:arity_qualifier(?Q("'$notify$'"), ?Q("4"))].
+
+
+interface_info(Ver, Rs, Evts, Enms) ->
+    RsInfo = requests_info(Rs),
+    EvtsInfo = events_info(Evts),
+    EnmsInfo = enums_info(Enms),
+    [ ?Q(["interface_info() -> "
+         ,"    [{version,  _@Ver@}"
+         ,"    ,{requests, interface_info(requests)}"
+         ,"    ,{events,   interface_info(events)}"
+         ,"    ,{enums,    interface_info(enums)}]."
+         ])
+    , ?Q(["interface_info(version)  -> _@Ver@;"
+         ,"interface_info(requests) -> _@RsInfo@;"
+         ,"interface_info(events)   -> _@EvtsInfo@;"
+         ,"interface_info(enums)    -> _@EnmsInfo@;"
+         ,"interface_info(_)        -> error(badarg)."
+         ])
+    ].
 
 
 interface_api(Rs, Evts, Enms) ->

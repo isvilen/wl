@@ -192,7 +192,7 @@ handle_call('$get_id_conn$', #state{id=Id,connection=Conn}=State) ->
     {{Id, Conn}, State};
 
 handle_call({'$start_child$', Itf, Id}, #state{handler=Handler}=State) ->
-    ItfVer = {Itf, min(Itf:version(), State#state.version)},
+    ItfVer = {Itf, min(Itf:interface_info(version), State#state.version)},
     NewHandler = Handler:new_handler(ItfVer, State#state.handler_state),
     case start_link(Id, ItfVer, State#state.connection, NewHandler) of
         {ok, Pid}       -> {Pid, State};
@@ -200,7 +200,7 @@ handle_call({'$start_child$', Itf, Id}, #state{handler=Handler}=State) ->
     end;
 
 handle_call({'$start_child$', Itf, Id, Handler}, State) ->
-    Ver = min(Itf:version(), State#state.version),
+    Ver = min(Itf:interface_info(version), State#state.version),
     case start_link(Id, {Itf, Ver}, State#state.connection, Handler) of
         {ok, Pid}       -> {Pid, State};
         {error, Reason} -> exit(Reason)
