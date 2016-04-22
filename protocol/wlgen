@@ -496,7 +496,7 @@ decode_arg_ast(#arg{type=new_id, interface=Itf}, V, Args, N) ->
     Rest = var_ast("Args", N),
     V1 = var_ast(V,1),
     {?Q(["{_@V1, _@Rest} = wl_wire:decode_object(_@Args),"
-        ,"_@V = wl_object:start_child(Pid, _@Itf@, _@V1)"])
+        ,"_@V = wl_object:start_child(Pid, {id, _@Itf@, _@V1})"])
     ,?Q("{_@V1, _@Itf@, _@V}")
     ,Rest
     };
@@ -540,7 +540,7 @@ decode_last_arg_ast(#arg{type=uint, enum=Enum}, V, Args) ->
 decode_last_arg_ast(#arg{type=new_id, interface=Itf}, V, Args) ->
     V1 = var_ast(V,1),
     {?Q(["{_@V1, <<>>} = wl_wire:decode_object(_@Args),"
-        ,"_@V = wl_object:start_child(Pid, _@Itf@, _@V1)"])
+        ,"_@V = wl_object:start_child(Pid, {id, _@Itf@, _@V1})"])
     ,?Q("{_@V1, _@Itf@, _@V}")
     };
 

@@ -1,13 +1,21 @@
 -module(wl_object).
 
--export([ start_link/4
-        , notify/2
+% public API
+-export([ id/1
+        , interface/1
+        , connection/1
         , call/2
         , call/3
+        , cast/2
+        ]).
+
+% internal API
+-export([ start_link/4
+        , notify/2
         , new_id/2
         , init/5
         , init/6
-        , start_child/3
+        , start_child/2
         , request/4
         , destroy/1
         , system_continue/3
@@ -17,16 +25,33 @@
 -include("wl.hrl").
 
 
-start_link(Id, {Itf, Ver}, Conn, Handler) ->
-    proc_lib:start_link(?MODULE, init, [self(), Id, Itf, Ver, Conn, Handler]).
+id(Pid) when Pid == self() ->
+    get(wl_id);
+
+id(Pid) ->
+    call(Pid, '$get_id$').
 
 
-notify(#wl_event{sender={Mod, Pid},evtcode=Code,args=Args}, Fds) ->
-    Mod:'$notify$'(Pid, Code, Args, Fds).
+interface(Pid) when Pid == self() ->
+    {get(wl_interface), get(wl_version)};
+
+interface(Pid) ->
+    call(Pid, '$get_interface_version$').
+
+
+connection(Pid) when Pid == self() ->
+    get(wl_connection);
+
+connection(Pid) ->
+    call(Pid, '$get_connection$').
 
 
 call(Pid, Request) ->
     call(Pid, Request, 5000).
+
+
+call(Pid, _Request, _Timeout) when Pid =:= self() ->
+    error(badarg);
 
 call(Pid, Request, Timeout) ->
     Mref = erlang:monitor(process, Pid),
@@ -40,7 +65,24 @@ call(Pid, Request, Timeout) ->
     after Timeout ->
             erlang:demonitor(Mref, [flush]),
             exit(timeout)
-    end .
+    end.
+
+
+cast(Pid, Message) ->
+    Pid ! {'$cast$', Message},
+    ok.
+
+
+start_link(Id, {Itf, Ver}, Conn, Handler) ->
+    proc_lib:start_link(?MODULE, init, [self(), Id, Itf, Ver, Conn, Handler]).
+
+
+notify(#wl_event{sender={Mod, Pid},evtcode=Code,args=Args}, Fds) ->
+    Mod:'$notify$'(Pid, Code, Args, Fds).
+
+
+start_child(Pid, Arg) ->
+    call(Pid, {'$start_child$', Arg}).
 
 
 new_id(Pid, NewId) ->
@@ -48,11 +90,7 @@ new_id(Pid, NewId) ->
     ok.
 
 
-start_child(Pid, Interface, Id) ->
-    call(Pid, {'$start_child$', {id, Interface, Id}}).
-
-
-start_child_link({Itf, Ver}, Conn, Handler) ->
+start_new_id_link({Itf, Ver}, Conn, Handler) ->
     proc_lib:start_link(?MODULE, init, [self(), Itf, Ver, Conn, Handler]).
 
 
@@ -82,11 +120,11 @@ prepare_local_request(Args) ->
 
 
 prepare_new_id(Pid, {new_id, {Itf, Ver, _}}=NewId) ->
-    {Id, Conn, NewPid} = call(Pid, {'$start_child$', NewId}),
+    {Id, Conn, NewPid} = start_child(Pid, NewId),
     {Id, Conn, {new_id, {Itf, Ver, NewPid}}};
 
 prepare_new_id(Pid, {new_id, Itf, _}=NewId) ->
-    {Id, Conn, NewPid} = call(Pid, {'$start_child$', NewId}),
+    {Id, Conn, NewPid} = start_child(Pid, NewId),
     {Id, Conn, {new_id, Itf, NewPid}}.
 
 
@@ -94,7 +132,7 @@ prepare_local_new_id({new_id, {Itf, Ver, Handler}}) ->
     ItfVer = {Itf, min(Ver, get(wl_version))},
     Conn = get(wl_connection),
     NewPid =
-    case start_child_link(ItfVer, Conn, Handler) of
+    case start_new_id_link(ItfVer, Conn, Handler) of
         {ok, Pid}       -> Pid;
         {error, Reason} -> exit(Reason)
     end,
@@ -104,7 +142,7 @@ prepare_local_new_id({new_id, Itf, Handler}) ->
     ItfVer = {Itf, min(Itf:interface_info(version), get(wl_version))},
     Conn = get(wl_connection),
     NewPid =
-    case start_child_link(ItfVer, Conn, Handler) of
+    case start_new_id_link(ItfVer, Conn, Handler) of
         {ok, Pid}       -> Pid;
         {error, Reason} -> exit(Reason)
     end,
@@ -185,6 +223,11 @@ loop(Parent, Name, State, Dbg) ->
             NewState = handle_event(Event, Args, State),
             loop(Parent, Name, NewState, Dbg1);
 
+        {'$cast$', Message} = Msg ->
+            Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
+            NewState = handle_cast(Message, State),
+            loop(Parent, Name, NewState, Dbg1);
+
         '$destroy$' = Msg ->
             Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
             case get(wl_id) of
@@ -243,6 +286,15 @@ event_arg(Arg) ->
     Arg.
 
 
+handle_call('$get_id$', State) ->
+    {get(wl_id), State};
+
+handle_call('$get_connection$', State) ->
+    {get(wl_connection), State};
+
+handle_call('$get_interface_version$', State) ->
+    {{get(wl_interface), get(wl_version)}, State};
+
 handle_call('$get_id_conn$', State) ->
     {{get(wl_id), get(wl_connection)}, State};
 
@@ -257,7 +309,7 @@ handle_call({'$start_child$', {id, Itf, Id}}, #state{handler=Handler}=State) ->
 handle_call({'$start_child$', {new_id, {Itf, Ver, Handler}}}, State) ->
     ItfVer = {Itf, min(Ver, get(wl_version))},
     Conn = get(wl_connection),
-    case start_child_link(ItfVer, Conn, Handler) of
+    case start_new_id_link(ItfVer, Conn, Handler) of
         {ok, Pid}       -> {{get(wl_id), Conn, Pid}, State};
         {error, Reason} -> exit(Reason)
     end;
@@ -265,7 +317,7 @@ handle_call({'$start_child$', {new_id, {Itf, Ver, Handler}}}, State) ->
 handle_call({'$start_child$', {new_id, Itf, Handler}}, State) ->
     ItfVer = {Itf, min(Itf:interface_info(version), get(wl_version))},
     Conn = get(wl_connection),
-    case start_child_link(ItfVer, Conn, Handler) of
+    case start_new_id_link(ItfVer, Conn, Handler) of
         {ok, Pid}       -> {{get(wl_id), Conn, Pid}, State};
         {error, Reason} -> exit(Reason)
     end;
@@ -276,6 +328,13 @@ handle_call(Request, #state{handler=Handler}=State) ->
             {Reply, State};
         {reply, Reply, NewHandlerState} ->
             {Reply, State#state{handler_state=NewHandlerState}}
+    end.
+
+
+handle_cast(Message, #state{handler=Handler}=State) ->
+    case Handler:handle_cast(Message, State#state.handler_state) of
+        ok                        -> State;
+        {new_state, HandlerState} -> State#state{handler_state=HandlerState}
     end.
 
 
