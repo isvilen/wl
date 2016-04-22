@@ -62,16 +62,53 @@ request(Pid, OpCode, Args, Fds) ->
     wl_connection:request(Conn, Request, Fds).
 
 
-prepare_request(Pid, {Args1, {new_id, {Itf, Ver, _}}=NewId, Args2}) ->
-    {Id, Conn, NewPid} = call(Pid, {'$start_child$', NewId}),
-    {Id, Conn, {Args1, {new_id, {Itf, Ver, NewPid}}, Args2}};
+prepare_request(Pid, Args) when Pid =:= self() ->
+    prepare_local_request(Args);
 
-prepare_request(Pid, {Args1, {new_id, Itf, _}=NewId, Args2}) ->
-    {Id, Conn, NewPid} = call(Pid, {'$start_child$', NewId}),
-    {Id, Conn, {Args1, {new_id, Itf, NewPid}, Args2}};
+prepare_request(Pid, {Args1, NewId, Args2}) ->
+    {Id, Conn, NewId1} = prepare_new_id(Pid, NewId),
+    {Id, Conn, {Args1, NewId1, Args2}};
 
 prepare_request(Pid, Args) ->
     erlang:append_element(call(Pid, '$get_id_conn$'), Args).
+
+
+prepare_local_request({Args1, NewId, Args2}) ->
+    {Id, Conn, NewPid} = prepare_local_new_id(NewId),
+    {Id, Conn, {Args1, NewPid, Args2}};
+
+prepare_local_request(Args) ->
+    {get(wl_id), get(wl_connection), Args}.
+
+
+prepare_new_id(Pid, {new_id, {Itf, Ver, _}}=NewId) ->
+    {Id, Conn, NewPid} = call(Pid, {'$start_child$', NewId}),
+    {Id, Conn, {new_id, {Itf, Ver, NewPid}}};
+
+prepare_new_id(Pid, {new_id, Itf, _}=NewId) ->
+    {Id, Conn, NewPid} = call(Pid, {'$start_child$', NewId}),
+    {Id, Conn, {new_id, Itf, NewPid}}.
+
+
+prepare_local_new_id({new_id, {Itf, Ver, Handler}}) ->
+    ItfVer = {Itf, min(Ver, get(wl_version))},
+    Conn = get(wl_connection),
+    NewPid =
+    case start_child_link(ItfVer, Conn, Handler) of
+        {ok, Pid}       -> Pid;
+        {error, Reason} -> exit(Reason)
+    end,
+    {get(wl_id), Conn, {new_id, {Itf, Ver, NewPid}}};
+
+prepare_local_new_id({new_id, Itf, Handler}) ->
+    ItfVer = {Itf, min(Itf:interface_info(version), get(wl_version))},
+    Conn = get(wl_connection),
+    NewPid =
+    case start_child_link(ItfVer, Conn, Handler) of
+        {ok, Pid}       -> Pid;
+        {error, Reason} -> exit(Reason)
+    end,
+    {get(wl_id), Conn, {new_id, Itf, NewPid}}.
 
 
 destroy(Pid) ->
