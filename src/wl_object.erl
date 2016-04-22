@@ -4,12 +4,10 @@
         , notify/2
         , call/2
         , call/3
-        ]).
-
-% internal API
--export([ init/6
+        , new_id/2
+        , init/5
+        , init/6
         , start_child/3
-        , start_child/4
         , request/4
         , destroy/1
         , system_continue/3
@@ -21,23 +19,6 @@
 
 start_link(Id, {Itf, Ver}, Conn, Handler) ->
     proc_lib:start_link(?MODULE, init, [self(), Id, Itf, Ver, Conn, Handler]).
-
-
-start_child(Pid, Interface, Id) ->
-    call(Pid, {'$start_child$', Interface, Id}).
-
-start_child(Pid, Interface, Id, Handler) ->
-    call(Pid, {'$start_child$', Interface, Id, Handler}).
-
-
-request(Pid, OpCode, Args, Fds) ->
-    {Id, Conn} = call(Pid, '$get_id_conn$'),
-    Request = #wl_request{sender=Id, opcode=OpCode, args=Args},
-    wl_connection:request(Conn, Request, Fds).
-
-destroy(Pid) ->
-    Pid ! '$destroy$',
-    ok.
 
 
 notify(#wl_event{sender={Mod, Pid},evtcode=Code,args=Args}, Fds) ->
@@ -62,59 +43,96 @@ call(Pid, Request, Timeout) ->
     end .
 
 
+new_id(Pid, NewId) ->
+    Pid ! {'$new_id$', NewId},
+    ok.
+
+
+start_child(Pid, Interface, Id) ->
+    call(Pid, {'$start_child$', {id, Interface, Id}}).
+
+
+start_child_link({Itf, Ver}, Conn, Handler) ->
+    proc_lib:start_link(?MODULE, init, [self(), Itf, Ver, Conn, Handler]).
+
+
+request(Pid, OpCode, Args, Fds) ->
+    {Id, Conn, Args1} = prepare_request(Pid, Args),
+    Request = #wl_request{sender=Id, opcode=OpCode, args=Args1},
+    wl_connection:request(Conn, Request, Fds).
+
+
+prepare_request(Pid, {Args1, {new_id, {Itf, Ver, _}}=NewId, Args2}) ->
+    {Id, Conn, NewPid} = call(Pid, {'$start_child$', NewId}),
+    {Id, Conn, {Args1, {new_id, {Itf, Ver, NewPid}}, Args2}};
+
+prepare_request(Pid, {Args1, {new_id, Itf, _}=NewId, Args2}) ->
+    {Id, Conn, NewPid} = call(Pid, {'$start_child$', NewId}),
+    {Id, Conn, {Args1, {new_id, Itf, NewPid}, Args2}};
+
+prepare_request(Pid, Args) ->
+    erlang:append_element(call(Pid, '$get_id_conn$'), Args).
+
+
+destroy(Pid) ->
+    Pid ! '$destroy$',
+    ok.
+
+
 -record(state,{id,interface,version,connection,handler,handler_state}).
 
 
+init(Parent, Itf, Ver, Conn, Handler) ->
+    proc_lib:init_ack(Parent, {ok, self()}),
+    State = #state{ interface=Itf
+                  , version=Ver
+                  , connection=Conn
+                  , handler=Handler
+                  },
+    unborn(Parent, {Itf, self()}, State, []).
+
+
 init(Parent, Id, Itf, Ver, Conn, Handler) ->
-    InitHandler = init_handler(Parent, {Itf, Ver}, Handler),
-    init_1(Parent, Id, Itf, Ver, Conn, InitHandler).
-
-init_1(Parent, Id, Itf, Ver, Conn, {ok, _, _} = InitHandler) ->
-    init_ack(Parent, Id, Itf, Ver, Conn, InitHandler);
-
-init_1(Parent, Id, Itf, Ver, Conn, InitHandler) ->
-    init_ack(Parent, Id, Itf, Ver, Conn, InitHandler).
-
-
-init_ack(Parent, Id, Itf, Ver, Conn, {ok, Handler, HandlerState}) ->
     proc_lib:init_ack(Parent, {ok, self()}),
     State = #state{ id=Id
                   , interface=Itf
                   , version=Ver
                   , connection=Conn
                   , handler=Handler
-                  , handler_state=HandlerState
                   },
-    loop(Parent, {Itf, self()}, State, []);
-
-init_ack(Parent, _Id, _Itf, _Ver, _Conn, {stop, Reason}) ->
-    proc_lib:init_ack(Parent, {error, Reason}),
-    exit(Reason);
-
-init_ack(Parent, _Id, _Itf, _Ver, _Conn, Other) ->
-    Reason = {bad_return_value, Other},
-    proc_lib:init_ack(Parent, {error, Reason}),
-    exit(Reason).
+    loop(Parent, {Itf, self()}, init_handler(Parent, State), []).
 
 
-init_handler(Parent, ItfVer, {Handler, Init}) ->
+init_handler(Parent, #state{handler={Handler, Init}}=State) ->
+    ItfVer = {State#state.interface, State#state.version},
     try Handler:init(Parent, ItfVer, Init) of
-        {ok, HandlerState} -> {ok, Handler, HandlerState};
-        Other              -> Other
+        {ok, HandlerState} ->
+            State#state{handler=Handler, handler_state=HandlerState};
+        Other ->
+            exit({bad_return_value, Other})
     catch
-        _:Reason ->
-            proc_lib:init_ack(Parent, {error, Reason}),
-            exit(Reason)
+        _:Reason -> exit(Reason)
     end;
 
-init_handler(Parent, ItfVer, Handler) ->
+init_handler(Parent, #state{handler=Handler}=State) ->
+    ItfVer = {State#state.interface, State#state.version},
     try Handler:init(Parent, ItfVer) of
-        {ok, HandlerState} -> {ok, Handler, HandlerState};
-        Other              -> Other
+        {ok, HandlerState} -> State#state{handler_state=HandlerState};
+        Other              -> exit({bad_return_value, Other})
     catch
-        _:Reason ->
-            proc_lib:init_ack(Parent, {error, Reason}),
-            exit(Reason)
+        _:Reason -> exit(Reason)
+    end.
+
+
+unborn(Parent, Name, State, Dbg) ->
+    receive
+        {'$new_id$', NewId} = Msg ->
+            Dbg1 = sys:handle_debug(Dbg, fun debug/3, Name, {in, Msg}),
+            loop(Parent, Name, init_handler(Parent,State#state{id=NewId}), Dbg1);
+
+        {system, From, Msg} ->
+            sys:handle_system_msg(Msg, From, Parent, ?MODULE, Dbg,
+                                  {fun unborn/4, Name, State})
     end.
 
 
@@ -191,7 +209,7 @@ event_arg(Arg, _) ->
 handle_call('$get_id_conn$', #state{id=Id,connection=Conn}=State) ->
     {{Id, Conn}, State};
 
-handle_call({'$start_child$', Itf, Id}, #state{handler=Handler}=State) ->
+handle_call({'$start_child$', {id, Itf, Id}}, #state{handler=Handler}=State) ->
     ItfVer = {Itf, min(Itf:interface_info(version), State#state.version)},
     NewHandler = Handler:new_handler(ItfVer, State#state.handler_state),
     case start_link(Id, ItfVer, State#state.connection, NewHandler) of
@@ -199,10 +217,19 @@ handle_call({'$start_child$', Itf, Id}, #state{handler=Handler}=State) ->
         {error, Reason} -> exit(Reason)
     end;
 
-handle_call({'$start_child$', Itf, Id, Handler}, State) ->
-    Ver = min(Itf:interface_info(version), State#state.version),
-    case start_link(Id, {Itf, Ver}, State#state.connection, Handler) of
-        {ok, Pid}       -> {Pid, State};
+handle_call({'$start_child$', {new_id, {Itf, Ver, Handler}}},
+            #state{id=Id,connection=Conn}=State) ->
+    ItfVer = {Itf, min(Ver, State#state.version)},
+    case start_child_link(ItfVer, State#state.connection, Handler) of
+        {ok, Pid}       -> {{Id, Conn, Pid}, State};
+        {error, Reason} -> exit(Reason)
+    end;
+
+handle_call({'$start_child$', {new_id, Itf, Handler}},
+            #state{id=Id,connection=Conn}=State) ->
+    ItfVer = {Itf, min(Itf:interface_info(version), State#state.version)},
+    case start_child_link(ItfVer, State#state.connection, Handler) of
+        {ok, Pid}       -> {{Id, Conn, Pid}, State};
         {error, Reason} -> exit(Reason)
     end;
 

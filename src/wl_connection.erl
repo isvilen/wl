@@ -137,31 +137,30 @@ handle_free_id(Id, #state{pids=Pids, ids=Ids, free_ids=FreeIds}=State) ->
     end.
 
 
-handle_request_args(#wl_request{sender=Id,args={Args1, Arg, Args2}},
-                    #state{ids=Ids,pids=Pids}=State) ->
+handle_request_args(#wl_request{args=Args},
+                    #state{pids=Pids}=State) when is_tuple(Args) ->
     {NewId, State1} = new_id(State),
-    {Itf, Handler, NewArgs} = handle_new_id_args(Args1, Arg, Args2, NewId, Pids),
-    {_, ParentPid} = maps:get(Id, Ids),
-    Pid = wl_object:start_child(ParentPid, Itf, NewId, Handler),
+    {Itf, Pid, NewArgs} = handle_new_id_args(Args, NewId, Pids),
+    ok = wl_object:new_id(Pid, NewId),
     {Pid, NewArgs, register_object(NewId, Itf, Pid, State1)};
 
 handle_request_args(#wl_request{args=Args}, #state{pids=Pids}=State)->
     {ok, [request_arg(Arg, Pids) || Arg <- Args], State}.
 
 
-handle_new_id_args(Args1, {new_id, {Itf, Ver, Handler}}, Args2, NewId, Pids) ->
+handle_new_id_args({Args1, {new_id, {Itf, Ver, Pid}}, Args2}, NewId, Pids) ->
     NewArgs1 = [request_arg(Arg, Pids) || Arg <- Args1],
     NewArgs2 = [request_arg(Arg, Pids) || Arg <- Args2],
     NewIdArgs = [ wl_wire:encode_string(list_to_binary(atom_to_list(Itf)))
                 , wl_wire:encode_uint(Ver)
                 , wl_wire:encode_object(NewId)
                 ],
-    {Itf, Handler, NewArgs1 ++ NewIdArgs ++ NewArgs2};
+    {Itf, Pid, NewArgs1 ++ NewIdArgs ++ NewArgs2};
 
-handle_new_id_args(Args1, {new_id, Itf, Handler}, Args2, NewId, Pids) ->
+handle_new_id_args({Args1, {new_id, Itf, Pid}, Args2}, NewId, Pids) ->
     NewArgs1 = [request_arg(Arg, Pids) || Arg <- Args1],
     NewArgs2 = [request_arg(Arg, Pids) || Arg <- Args2],
-    {Itf, Handler, NewArgs1 ++ [wl_wire:encode_object(NewId) | NewArgs2]}.
+    {Itf, Pid, NewArgs1 ++ [wl_wire:encode_object(NewId) | NewArgs2]}.
 
 
 request_arg({id, Pid}, Pids) ->
