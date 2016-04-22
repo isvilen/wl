@@ -1,8 +1,33 @@
 -module(wl_registry_handler).
--export([ init/2
+-export([ globals/1
+        , bind/3
+        , init/2
         , handle_event/3
         , handle_call/2
         ]).
+
+
+globals(Registry) ->
+    wl_object:call(Registry, globals).
+
+
+bind(Registry, Itf, Handler) ->
+    case wl_object:call(Registry, {globals, Itf}) of
+        [] ->
+            not_supported;
+        [NameVer] ->
+            bind_1(Registry, Itf, NameVer, Handler);
+        Values ->
+            [bind_1(Registry, Itf, NameVer, Handler) || NameVer <- Values]
+    end.
+
+
+bind_1(Registry, Itf, NameVer, Handler) when is_pid(Handler) ->
+    bind_1(Registry, Itf, NameVer, {wl_default_handler, Handler});
+
+bind_1(Registry, Itf, {Name, Ver}, Handler) ->
+    V = min(Itf:interface_info(version), Ver),
+    wl_registry:bind(Registry, Name, {Itf, V, Handler}).
 
 
 init(_Parent, _ItfVer) ->
