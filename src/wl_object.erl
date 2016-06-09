@@ -132,7 +132,7 @@ prepare_new_id(Pid, {new_id, Itf, _}=NewId) ->
 
 
 prepare_local_new_id({new_id, {Itf, Ver, Handler}}) ->
-    ItfVer = {Itf, min(Ver, get(wl_version))},
+    ItfVer = {Itf, Ver},
     Conn = get(wl_connection),
     NewPid = start_new_id_link(ItfVer, Conn, Handler),
     {get(wl_id), Conn, {new_id, {Itf, Ver, NewPid}}};
