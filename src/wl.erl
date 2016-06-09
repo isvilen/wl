@@ -84,12 +84,18 @@ default_socket_path() ->
 default_handler(wl_output) ->
     wl_output_handler:new();
 
+default_handler(wl_seat) ->
+    wl_seat_handler:new();
+
 default_handler(_Itf) ->
     wl_default_handler:new().
 
 
 default_handler(wl_output, Pid) ->
     wl_output_handler:new(Pid);
+
+default_handler(wl_seat, Pid) ->
+    wl_seat_handler:new(Pid);
 
 default_handler(_Itf, Pid) ->
     wl_default_handler:new(Pid).

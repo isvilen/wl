@@ -113,19 +113,6 @@ handle_event({wl_shell_surface, ShellSurface, ping, [Arg]}, State) ->
 handle_event({wl_shell_surface, _, configure, [_Edges, W, H]}, State) ->
     resize(W, H, State);
 
-handle_event({wl_seat, Seat, capabilities, [Capabilities]}, State) ->
-    Keyboard =
-    case lists:member(keyboard, Capabilities) of
-        true  -> wl_seat:get_keyboard(Seat, handler());
-        false -> error(no_keyboard)
-    end,
-    Pointer =
-    case lists:member(pointer, Capabilities) of
-        true  -> wl_seat:get_pointer(Seat, handler());
-        false -> error(no_pointer)
-    end,
-    State#{keyboard => Keyboard, pointer => Pointer};
-
 handle_event({wl_output, _Output, config, _Info}, State) ->
     render(State#{buffers => []});
 
@@ -197,14 +184,16 @@ get_cursor(_, _, _) ->
 set_cursor(_Cursor, #{serial := undefined}=State) ->
     State;
 
-set_cursor(_Cursor, #{pointer := undefined}=State) ->
-    State;
+set_cursor(Cursor, #{seat := Seat}=State) ->
+    case wl_seat_handler:pointer(Seat) of
+        undefined -> State;
+        Pointer   -> set_cursor(Cursor, Pointer, State)
+    end.
 
-set_cursor(Cursor, #{ pointer := Pointer
-                    , serial := Serial
-                    , cursor_surface := Surface
-                    , cursors := Cursors
-                    }=State) ->
+set_cursor(Cursor, Pointer, #{ serial := Serial
+                             , cursor_surface := Surface
+                             , cursors := Cursors
+                             }=State) ->
     #wl_cursor{images=[#wl_cursor_image{ x_hot  = Xhot
                                        , y_hot  = Yhot
                                        , width  = W
@@ -212,7 +201,6 @@ set_cursor(Cursor, #{ pointer := Pointer
                                        , data   = Data
                                        }
                        |_]} = lists:keyfind(Cursor, #wl_cursor.name, Cursors),
-
     Buf = allocate_cursor_buffer(W, H, Data, State),
     ok = wl_surface:attach(Surface, Buf, 0, 0),
     ok = wl_surface:damage(Surface, 0, 0, W, H),

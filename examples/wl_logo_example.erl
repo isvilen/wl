@@ -40,13 +40,6 @@ event_loop() ->
             ok = wl_shell_surface:pong(SSurface, Arg),
             event_loop();
 
-        {wl_seat, Seat, capabilities, [Capabilities]} ->
-            case lists:member(keyboard, Capabilities) of
-                true  -> wl_seat:get_keyboard(Seat, handler());
-                false -> ok
-            end,
-            event_loop();
-
         {wl_keyboard, _, key, [_Serial, _Time, ?ESC_KEY, released]} ->
             ok;
 
