@@ -11,12 +11,8 @@ sync(Display) ->
 
 
 sync(Display, Timeout) ->
-    CallBackPid = wl_display:sync(Display, {wl_callback_handler, self()}),
-    receive
-        {done, CallBackPid, _} -> ok
-    after
-        Timeout -> timeout
-    end.
+    CallBackPid = wl_display:sync(Display, wl_callback_handler:notify()),
+    wl_callback_handler:wait(CallBackPid, Timeout).
 
 
 init(Connection, _ItfVer) ->
