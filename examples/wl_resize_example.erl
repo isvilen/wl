@@ -50,10 +50,10 @@ init(Conn) ->
 
 init_globals(#{connection := Conn} = State) ->
     State#{ compositor => wl:bind(Conn, wl_compositor)
-          , output     => wl:bind(Conn, wl_output, handler())
           , shm        => wl:bind(Conn, wl_shm, handler())
           , shell      => wl:bind(Conn, wl_shell)
           , seat       => wl:bind(Conn, wl_seat, handler())
+          , output     => wl:bind(Conn, wl_output, wl_output_handler:new())
           }.
 
 
@@ -126,7 +126,7 @@ handle_event({wl_seat, Seat, capabilities, [Capabilities]}, State) ->
     end,
     State#{keyboard => Keyboard, pointer => Pointer};
 
-handle_event({wl_output, _Output, done}, State) ->
+handle_event({wl_output, _Output, config, _Info}, State) ->
     render(State#{buffers => []});
 
 handle_event({wl_pointer, _, enter, [Serial, Surface, X, Y]},
