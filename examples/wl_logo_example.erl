@@ -13,9 +13,9 @@ main() ->
     {ok, Conn} = wl:connect(),
 
     Compositor = wl:bind(Conn, wl_compositor),
-    Shm = wl:bind(Conn, wl_shm, handler()),
+    Shm = wl:bind(Conn, wl_shm),
     Shell = wl:bind(Conn, wl_shell),
-    _Seat = wl:bind(Conn, wl_seat, handler()),
+    _Seat = wl:bind(Conn, wl_seat),
 
     Fd = wayland_logo_fd(),
     Pool = wl_shm:create_pool(Shm, handler(), Fd, ?SIZE),
@@ -65,4 +65,4 @@ wayland_logo_fd() ->
 
 
 handler() ->
-    {wl_default_handler, self()}.
+    wl_default_handler:new().

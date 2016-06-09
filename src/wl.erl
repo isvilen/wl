@@ -27,11 +27,11 @@ disconnect(Conn) ->
 
 
 bind(Conn, Itf) ->
-    bind(Conn, Itf, wl_default_handler).
+    bind(Conn, Itf, default_handler(Itf)).
 
 
-bind(Conn, Itf, Pid) when is_pid(Pid) ->
-    bind(Conn, Itf, {wl_default_handler, Pid});
+bind(Conn, Itf, Pid) when is_pid(Pid); Pid =:= undefined ->
+    bind(Conn, Itf, default_handler(Itf, Pid));
 
 bind(Conn, Itf, Handler) ->
     case wl_registry_handler:bind(get_registry(Conn), Itf, Handler) of
@@ -79,3 +79,17 @@ default_socket_path() ->
             Display = os:getenv("WAYLAND_DISPLAY", "wayland-0"),
             list_to_binary(filename:join([Dir, Display]))
     end.
+
+
+default_handler(wl_output) ->
+    wl_output_handler:new();
+
+default_handler(_Itf) ->
+    wl_default_handler:new().
+
+
+default_handler(wl_output, Pid) ->
+    wl_output_handler:new(Pid);
+
+default_handler(_Itf, Pid) ->
+    wl_default_handler:new(Pid).

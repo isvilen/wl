@@ -50,10 +50,10 @@ init(Conn) ->
 
 init_globals(#{connection := Conn} = State) ->
     State#{ compositor => wl:bind(Conn, wl_compositor)
-          , shm        => wl:bind(Conn, wl_shm, handler())
+          , shm        => wl:bind(Conn, wl_shm)
           , shell      => wl:bind(Conn, wl_shell)
-          , seat       => wl:bind(Conn, wl_seat, handler())
-          , output     => wl:bind(Conn, wl_output, wl_output_handler:new())
+          , seat       => wl:bind(Conn, wl_seat)
+          , output     => wl:bind(Conn, wl_output)
           }.
 
 
@@ -298,6 +298,5 @@ fill_fd(MemFd, Color, Size) ->
     memfd:write(MemFd, Color),
     fill_fd(MemFd, Color, Size-4).
 
-
 handler() ->
-    {wl_default_handler, self()}.
+    wl_default_handler:new().
