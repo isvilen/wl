@@ -91,7 +91,10 @@ new_id(Pid, NewId) ->
 
 
 start_new_id_link({Itf, Ver}, Conn, Handler) ->
-    proc_lib:start_link(?MODULE, init, [self(), Itf, Ver, Conn, Handler]).
+    case proc_lib:start_link(?MODULE, init, [self(), Itf, Ver, Conn, Handler]) of
+        {ok, Pid}       -> Pid;
+        {error, Reason} -> exit(Reason)
+    end.
 
 
 request(Pid, OpCode, Args, Fds) ->
@@ -131,21 +134,13 @@ prepare_new_id(Pid, {new_id, Itf, _}=NewId) ->
 prepare_local_new_id({new_id, {Itf, Ver, Handler}}) ->
     ItfVer = {Itf, min(Ver, get(wl_version))},
     Conn = get(wl_connection),
-    NewPid =
-    case start_new_id_link(ItfVer, Conn, Handler) of
-        {ok, Pid}       -> Pid;
-        {error, Reason} -> exit(Reason)
-    end,
+    NewPid = start_new_id_link(ItfVer, Conn, Handler),
     {get(wl_id), Conn, {new_id, {Itf, Ver, NewPid}}};
 
 prepare_local_new_id({new_id, Itf, Handler}) ->
     ItfVer = {Itf, min(Itf:interface_info(version), get(wl_version))},
     Conn = get(wl_connection),
-    NewPid =
-    case start_new_id_link(ItfVer, Conn, Handler) of
-        {ok, Pid}       -> Pid;
-        {error, Reason} -> exit(Reason)
-    end,
+    NewPid = start_new_id_link(ItfVer, Conn, Handler),
     {get(wl_id), Conn, {new_id, Itf, NewPid}}.
 
 
@@ -309,18 +304,14 @@ handle_call({'$start_child$', {id, Itf, Id}}, #state{handler=Handler}=State) ->
 handle_call({'$start_child$', {new_id, {Itf, Ver, Handler}}}, State) ->
     ItfVer = {Itf, min(Ver, get(wl_version))},
     Conn = get(wl_connection),
-    case start_new_id_link(ItfVer, Conn, Handler) of
-        {ok, Pid}       -> {{get(wl_id), Conn, Pid}, State};
-        {error, Reason} -> exit(Reason)
-    end;
+    Pid = start_new_id_link(ItfVer, Conn, Handler),
+    {{get(wl_id), Conn, Pid}, State};
 
 handle_call({'$start_child$', {new_id, Itf, Handler}}, State) ->
     ItfVer = {Itf, min(Itf:interface_info(version), get(wl_version))},
     Conn = get(wl_connection),
-    case start_new_id_link(ItfVer, Conn, Handler) of
-        {ok, Pid}       -> {{get(wl_id), Conn, Pid}, State};
-        {error, Reason} -> exit(Reason)
-    end;
+    Pid = start_new_id_link(ItfVer, Conn, Handler),
+    {{get(wl_id), Conn, Pid}, State};
 
 handle_call(Request, #state{handler=Handler}=State) ->
     case Handler:handle_call(Request, State#state.handler_state) of
