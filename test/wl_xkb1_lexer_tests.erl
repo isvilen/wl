@@ -61,6 +61,11 @@ integer_token_test_() -> [
 ].
 
 
+float_token_test_() -> [
+    ?_assertEqual({ok, [{float, 1, 1.0}], 1}, ?scan("1.0"))
+].
+
+
 interpret_fragment_test_() -> [
     ?_assertMatch({ok, [{identifier,_, "interpret"}
                        ,{identifier,_, "KP_8"}
@@ -96,6 +101,13 @@ interpret_fragment_test_() -> [
                         "		repeat= True;\n"
                         "		action= MovePtr(x=+0,y=-1);\n"
                         "	};\n"))
+].
+
+
+skip_comment_test_() -> [
+    ?_assertMatch({ok, [{integer,_, 1}, {integer, _, 2}], _},
+                  ?scan("1 // comment\n"
+                        "2\n"))
 ].
 
 

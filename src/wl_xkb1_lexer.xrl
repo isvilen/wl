@@ -33,10 +33,13 @@ Rules.
 {Digit}+ :
     {token, {integer, TokenLine, list_to_integer(TokenChars)}}.
 
+{Digit}+\.{Digit}+ :
+    {token, {float, TokenLine, list_to_float(TokenChars)}}.
+
 [\[\](){}=!+-;.,] :
     {token, {list_to_atom(TokenChars), TokenLine}}.
 
-{WS}+ :
+(//[^\n]*)|{WS}+ :
     skip_token.
 
 
