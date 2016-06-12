@@ -3,6 +3,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 -define(scan(S),wl_xkb1_lexer:string(S)).
+-define(scan_file(F),?scan(read_keymap(F))).
 
 
 section_tokens_test_() -> [
@@ -96,3 +97,25 @@ interpret_fragment_test_() -> [
                         "		action= MovePtr(x=+0,y=-1);\n"
                         "	};\n"))
 ].
+
+
+keymaps_files_test_() -> [
+    ?_assertMatch({ok, _, _}, ?scan_file("bad.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("basic.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("comprehensive-plus-geom.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("divide-by-zero.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("host.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("no-aliases.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("no-types.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("quartz.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("syntax-error2.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("syntax-error.xkb"))
+   ,?_assertMatch({ok, _, _}, ?scan_file("unbound-vmod.xkb"))
+].
+
+
+read_keymap(F) ->
+    {_, _, ModuleFile} = code:get_object_code(?MODULE),
+    Base = filename:dirname(ModuleFile),
+    {ok, Bin} = file:read_file(filename:join([Base, "data", "xkb_keymaps", F])),
+    binary_to_list(Bin).

@@ -1,6 +1,6 @@
 Definitions.
 
-Section = (xkb_compatibility|xkb_keycodes|xkb_keymap|xkb_symbols|xkb_types)
+Section = (xkb_compatibility|xkb_keycodes|xkb_keymap|xkb_symbols|xkb_types|xkb_geometry)
 
 Digit = [0-9]
 
@@ -21,7 +21,7 @@ Rules.
 {Letter}{Identifier}* :
     {token, {identifier, TokenLine, TokenChars}}.
 
-<[^>\000-\s]+> :
+<[^>\000-\s]*> :
     {token, {keyname, TokenLine, strip(TokenChars,TokenLen)} }.
 
 "[^"]*" :
