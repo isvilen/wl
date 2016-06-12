@@ -16,3 +16,4 @@ _build
 src/wayland/
 src/drm/
 src/wl_xkb1_lexer.erl
+src/wl_xkb1_parser.erl
