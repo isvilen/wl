@@ -417,9 +417,9 @@ KeySymList -> KeySyms                : ['$1'].
 
 KeySyms -> '{' KeySymList '}' : '$2'.
 
-KeySym -> identifier : value_of('$1').
-KeySym -> section    : 16#00a7.  % U+00A7 SECTION SIGN
-KeySym -> Integer    : '$1'.
+KeySym -> identifier : resolve_keysym(value_of('$1')).
+KeySym -> section    : resolve_keysym("section").
+KeySym -> Integer    : resolve_keysym(integer_to_list('$1')).
 
 
 SignedNumber ->  '-' Number :  -'$2'.
@@ -452,6 +452,9 @@ MapName -> string : value_of('$1').
 
 Erlang code.
 
+-include("wl_xkb_keysymdef.hrl").
+
+
 xkb_file_create(Type, Name, Decls, Opts) ->
     {Type, Name, Decls, Opts}.
 
@@ -469,3 +472,11 @@ expr_create(Op, Arg1, Arg2) ->
 
 expr_create(Op, Arg) ->
     {Op, Arg}.
+
+
+resolve_keysym("Any") ->
+    any;
+resolve_keysym("NoSymbol") ->
+    no_symbol;
+resolve_keysym(KeySym) ->
+    maps:get(KeySym,?XKB_KEYDEFS,undefined).
