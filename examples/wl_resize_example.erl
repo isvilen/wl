@@ -103,7 +103,7 @@ event_loop(State) ->
     end.
 
 
-handle_event({wl_keyboard, _, key, [_Serial, _Time, ?ESC_KEY, released]}, _) ->
+handle_event({wl_keyboard, _, key_released, _Serial, _Time, ?ESC_KEY}, _) ->
     stop;
 
 handle_event({wl_shell_surface, ShellSurface, ping, [Arg]}, State) ->
