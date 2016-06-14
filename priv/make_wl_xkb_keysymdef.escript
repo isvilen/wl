@@ -2,7 +2,12 @@
 -mode(compile).
 
 -define(X11_INCLUDE_DIR,"/usr/include/X11").
--define(DEFAULT_KEYDEFS,["keysymdef.h", "XF86keysym.h"]).
+-define(DEFAULT_KEYDEFS,["keysymdef.h"
+                        ,"XF86keysym.h"
+                        ,"Sunkeysym.h"
+                        ,"DECkeysym.h"
+                        ,"HPkeysym.h"
+                        ]).
 
 % special keysym
 -define(KEY_KP_Space,16#ff80).
