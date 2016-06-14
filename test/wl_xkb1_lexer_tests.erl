@@ -51,6 +51,11 @@ keyname_token_test_() -> [
 
 string_token_test_() -> [
     ?_assertMatch({ok, [{string,_,"CTRL+ALT"}], _}, ?scan("\"CTRL+ALT\""))
+   ,?_assertMatch({ok, [{string,_,"a\"b"}], _}, ?scan("\"a\\\"b\""))
+   ,?_assertMatch({ok, [{string,_,"\n\r\t\v\b\f\e"}], _},
+                  ?scan("\"\\n\\r\\t\\v\\b\\f\\e\""))
+   ,?_assertMatch({ok, [{string,_,[2,10,65]}], _},
+                  ?scan([$", $\\, $2, $\\, $1, $2, $\\, $1, $0, $1, $"]))
 ].
 
 
@@ -66,8 +71,30 @@ float_token_test_() -> [
 ].
 
 
+operators_and_punctuation_tokens_test_() -> [
+    ?_assertMatch({ok, [{';', _}
+                       ,{'{', _}
+                       ,{'}', _}
+                       ,{'=', _}
+                       ,{'[', _}
+                       ,{']', _}
+                       ,{'(', _}
+                       ,{')', _}
+                       ,{'.', _}
+                       ,{',', _}
+                       ,{'+', _}
+                       ,{'-', _}
+                       ,{'*', _}
+                       ,{'/', _}
+                       ,{'!', _}
+                       ,{'~', _}
+                       ], _},
+                  ?scan(";{}=[]().,+-*/!~"))
+].
+
+
 interpret_fragment_test_() -> [
-    ?_assertMatch({ok, [{identifier,_, "interpret"}
+    ?_assertMatch({ok, [{interpret, _}
                        ,{identifier,_, "KP_8"}
                        ,{'+',_}
                        ,{identifier,_, "AnyOfOrNone"}
@@ -79,7 +106,7 @@ interpret_fragment_test_() -> [
                        ,{'=',_}
                        ,{identifier,_, "True"}
                        ,{';',_}
-                       ,{identifier,_, "action"}
+                       ,{action, _}
                        ,{'=',_}
                        ,{identifier,_, "MovePtr"}
                        ,{'(',_}
@@ -107,7 +134,7 @@ interpret_fragment_test_() -> [
 skip_comment_test_() -> [
     ?_assertMatch({ok, [{integer,_, 1}, {integer, _, 2}], _},
                   ?scan("1 // comment\n"
-                        "2\n"))
+                        "2 # comment\n"))
 ].
 
 
