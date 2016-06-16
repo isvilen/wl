@@ -482,7 +482,7 @@ resolve_keysym("NoSymbol") ->
 resolve_keysym([$U,D1,D2,D3,D4]=KeySym) ->
     case io_lib:fread("~16u", [D1,D2,D3,D4]) of
         {ok,[V],[]} ->
-            {char, V};
+            {unicode, {char, V}};
         _  -> maps:get(KeySym,?XKB_KEYDEFS,undefined)
     end;
 resolve_keysym(KeySym) ->

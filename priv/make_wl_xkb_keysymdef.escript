@@ -86,7 +86,7 @@ keysym(Line, P1, P2, P3, Acc) ->
     KeyVal =
     case KeyCode of
        V when (V band 16#ff000000) == 16#01000000 ->
-           {char, V band 16#00ffffff};
+           {KeyCode, {char, V band 16#00ffffff}};
 
        V when V >= ?KEY_BackSpace andalso V =< ?KEY_Clear
             ; V >= ?KEY_KP_Multiply andalso V =< ?KEY_KP_9
@@ -96,13 +96,13 @@ keysym(Line, P1, P2, P3, Acc) ->
             ; V == ?KEY_KP_Tab
             ; V == ?KEY_KP_Enter
             ; V == ?KEY_KP_Equal ->
-        {char, V band 16#7f};
+        {KeyCode, {char, V band 16#7f}};
 
        ?KEY_KP_Space ->
-           {char, 32};
+           {?KEY_KP_Space, {char, 32}};
 
        _ -> % create keysym, but check for duplicated or deprecated entries
-           maps:get(KeyCode, Acc, {key, keysym_atom(Line, P1, P2)})
+           maps:get(KeyCode, Acc, {KeyCode, {key, keysym_atom(Line, P1, P2)}})
     end,
     Acc#{KeyName => KeyVal, KeyCode => KeyVal}.
 
@@ -110,7 +110,7 @@ keysym(Line, P1, P2, P3, Acc) ->
 keychar(Line, P1, P2, P3, P4, Acc) ->
     KeyName = keysym_name(Line, P1, P2),
     KeyCode = keysym_code(Line, P3),
-    KeyVal = {char, hex_to_int(binary:part(Line, P4))},
+    KeyVal = {KeyCode, {char, hex_to_int(binary:part(Line, P4))}},
     Acc#{KeyName => KeyVal, KeyCode => KeyVal}.
 
 
