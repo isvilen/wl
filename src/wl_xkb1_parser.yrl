@@ -200,7 +200,8 @@ VarDecl -> '!' Ident ';'    : {'$1', false}.
 
 KeyNameDecl -> keyname '=' KeyCode ';' : {keyname, value_of('$1'), '$3'}.
 
-KeyAliasDecl -> alias keyname '=' keyname ';' : {alias, '$2', '$4'}.
+KeyAliasDecl -> alias keyname '=' keyname ';'
+              : {alias, value_of('$2'), value_of('$4')}.
 
 
 VModDecl -> virtual_modifiers VModDefList ';' : {virtual_modifiers, '$2'}.
