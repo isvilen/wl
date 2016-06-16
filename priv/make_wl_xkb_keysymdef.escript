@@ -28,9 +28,26 @@ main([]) ->
 
 main(KeyDefsFiles) ->
     KeyDefs = lists:foldl(fun process_keydef_file/2, #{}, KeyDefsFiles),
+    write_input_files(KeyDefsFiles),
+    write_keysyms(KeyDefs),
+    write_keydef(KeyDefs).
+
+
+write_input_files(Files) ->
     io:format("%% generated with ~s~n", [escript:script_name()]),
-    io:format("%% from files: ~s~n", [hd(KeyDefsFiles)]),
-    [io:format("%%             ~s~n", [F]) || F <- tl(KeyDefsFiles)],
+    io:format("%% from files: ~s~n", [hd(Files)]),
+    [io:format("%%             ~s~n", [F]) || F <- tl(Files)],
+    io:format("~n").
+
+
+write_keysyms(KeyDefs) ->
+    Syms = [{K, V} || {K,{V, _}} <- maps:to_list(KeyDefs)],
+    SortedSyms = lists:sort(fun ({_,V1},{_,V2}) -> V1 =< V2 end, Syms),
+    [io:format("-define(KEY_~s,16#~.16B).~n",[K,V]) || {K,V} <- SortedSyms],
+    io:format("~n").
+
+
+write_keydef(KeyDefs) ->
     io:format("-define(XKB_KEYDEFS,~p).~n", [KeyDefs]).
 
 
