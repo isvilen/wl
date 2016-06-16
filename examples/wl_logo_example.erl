@@ -40,7 +40,7 @@ event_loop() ->
             ok = wl_shell_surface:pong(SSurface, Arg),
             event_loop();
 
-        {wl_keyboard, _, key_released, _Serial, _Time, ?ESC_KEY} ->
+        {wl_keyboard, _, released, _Serial, _Time, ?ESC_KEY} ->
             ok;
 
         Msg ->

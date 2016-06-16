@@ -55,7 +55,7 @@ handle_event(key, [Serial, Time, Key, pressed], #state{ keymap_format=xkb
                                                       , notify=NotifyPid
                                                       }=State) ->
     {Keys, NewKeymapState} = wl_xkb:key_pressed(KeymapState, Key),
-    send_keys(NotifyPid, key_pressed, Serial, Time, Keys),
+    send_keys(NotifyPid, pressed, Serial, Time, Keys),
     {new_state, State#state{keymap_state=NewKeymapState, serial=Serial}};
 
 handle_event(key, [Serial, Time, Key, released], #state{ keymap_format=xkb
@@ -63,7 +63,7 @@ handle_event(key, [Serial, Time, Key, released], #state{ keymap_format=xkb
                                                        , notify=NotifyPid
                                                        }=State) ->
     {Keys, NewKeymapState} = wl_xkb:key_released(KeymapState, Key),
-    send_keys(NotifyPid, key_released, Serial, Time, Keys),
+    send_keys(NotifyPid, released, Serial, Time, Keys),
     {new_state, State#state{keymap_state=NewKeymapState, serial=Serial}};
 
 handle_event(key, [Serial, _Time, _Key, _KeyState]
