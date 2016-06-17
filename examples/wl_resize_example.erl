@@ -12,7 +12,7 @@
 
 -define(BLUE,<<255,0,0,255>>).
 
--define(ESC_KEY,1).
+-define(ESC_KEY,{char,$\e}).
 -define(L_BTN,272).
 
 -define(CURSOR_THEME,"default").

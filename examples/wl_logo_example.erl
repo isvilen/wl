@@ -6,7 +6,7 @@
 -define(SIZE,?W*?H*4).
 -define(STRIDE,?W*4).
 
--define(ESC_KEY,1).
+-define(ESC_KEY,{char, $\e}).
 
 
 main() ->
