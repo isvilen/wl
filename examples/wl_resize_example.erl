@@ -13,7 +13,6 @@
 -define(BLUE,<<255,0,0,255>>).
 
 -define(ESC_KEY,{char,$\e}).
--define(L_BTN,272).
 
 -define(CURSOR_THEME,"default").
 -define(CURSOR_SIZE,16).
@@ -116,17 +115,17 @@ handle_event({wl_shell_surface, _, configure, [_Edges, W, H]}, State) ->
 handle_event({wl_output, _Output, config, _Info}, State) ->
     render(State#{buffers => []});
 
-handle_event({wl_pointer, _, enter, [Serial, Surface, X, Y]},
+handle_event({wl_pointer, _, enter, Serial, Surface, {X, Y}},
              #{main_surface := Surface} = State) ->
     update_cursor(enter, X, Y, State#{serial := Serial});
 
-handle_event({wl_pointer, _, motion, [_Time, X, Y]}, State) ->
+handle_event({wl_pointer, _, motion, _Time, {X, Y}}, State) ->
     update_cursor(motion, X, Y, State);
 
-handle_event({wl_pointer, _, button, [Serial, _, ?L_BTN, pressed]}, State) ->
+handle_event({wl_pointer, _, pressed, Serial, _, button_left}, State) ->
     request_resize(Serial, State);
 
-handle_event({wl_pointer, _, leave, [_Serial, _Surface]}, State) ->
+handle_event({wl_pointer, _, leave, _Serial, _Surface}, State) ->
     State#{current_cursor := default, serial := undefined};
 
 handle_event({wl_buffer, Buf, release},

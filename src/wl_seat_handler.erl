@@ -92,7 +92,7 @@ create_device(keyboard, NotifyPid) ->
     wl_seat:get_keyboard(self(), wl_keyboard_handler:new(NotifyPid));
 
 create_device(pointer, NotifyPid) ->
-    wl_seat:get_pointer(self(), wl_default_handler:new(NotifyPid));
+    wl_seat:get_pointer(self(), wl_pointer_handler:new(NotifyPid));
 
 create_device(touch, NotifyPid) ->
     wl_seat:get_touch(self(), wl_default_handler:new(NotifyPid)).
