@@ -27,6 +27,8 @@
                 , bottom_right_corner
                 ]).
 
+-define(FMT,argb8888).
+
 
 main() ->
     {ok, Conn} = wl:connect(),
@@ -267,7 +269,7 @@ allocate_buffer(#{ shm_pool := Pool
                  , height   := H
                  , buffers  := Buffers} = State) ->
     Stride = ?MAX_W * 4,
-    Buf = wl_shm_pool:create_buffer(Pool, handler(), Offset, W, H, Stride, 0),
+    Buf = wl_shm_pool:create_buffer(Pool, handler(), Offset, W, H, Stride, ?FMT),
     {ok, Buf, State#{shm_free := Rest, buffers := [{Buf, Offset} | Buffers]}}.
 
 
@@ -275,7 +277,7 @@ allocate_cursor_buffer(W, H, Data, #{shm_pool := Pool, memfd := MemFd}) ->
     Offset = 2 * (?MAX_W * ?MAX_H * 4),
     Stride = W * 4,
     ok = memfd:pwrite(MemFd, Offset, Data),
-    wl_shm_pool:create_buffer(Pool, handler(), Offset, W, H, Stride, 0).
+    wl_shm_pool:create_buffer(Pool, handler(), Offset, W, H, Stride, ?FMT).
 
 
 

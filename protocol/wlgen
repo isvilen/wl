@@ -9,44 +9,43 @@
 -record(arg,{name,type,interface,allow_null,enum}).
 -record(enum,{name,since,bitfield,entries}).
 -record(entry,{name,value,since}).
+-record(interface,{name,version,requests,events,enums}).
 
 
 main([]) ->
-    generate();
+    generate_protocols();
 
 main(["clean"]) ->
     clean().
 
 
-generate() ->
-    lists:foreach(fun generate/1, protocols()).
+generate_protocols() ->
+    lists:foreach(fun generate_protocol/1, protocols()).
 
 
 clean() ->
     lists:foreach(fun clean/1, protocols()).
 
 
-generate(XmlFile) ->
-    {Protocol, Interfaces} = protocol_data(XmlFile),
+generate_protocol(XmlFile) ->
+    {Protocol, Itfs} = protocol_data(XmlFile),
     OutDir = objects_dir(Protocol),
     ok = filelib:ensure_dir(filename:join(OutDir, ".")),
-    lists:foreach(fun (Itf) -> generate(Itf, OutDir) end, Interfaces).
+    lists:foreach(fun (Itf) -> generate(Itf, Itfs, OutDir) end, Itfs).
 
 
-generate({ItfStr, VerStr, Data}, OutDir) ->
-    File = filename:join(OutDir, ItfStr ++ ".erl"),
+generate(#interface{name=Name}=Itf, Itfs, OutDir) ->
+    File = filename:join(OutDir, atom_to_list(Name) ++ ".erl"),
     case filelib:is_regular(File) of
         true ->
             ok;
         false ->
-            Mod = generate(list_to_atom(ItfStr), list_to_integer(VerStr), Data),
+            Mod = generate(resolve_enums(Itf, Itfs)),
             write_module(Mod, File)
     end.
 
 
-generate(Itf, Ver, Data) ->
-    {Rs,Evts,Enms} = parse_interface(Data),
-
+generate(#interface{name=Itf,version=Ver,requests=Rs,events=Evts,enums=Enms}) ->
     ItfExports = interface_exports(Rs, Evts),
 
     [ ?Q("-module('@Itf@').")
@@ -54,6 +53,45 @@ generate(Itf, Ver, Data) ->
     , ?Q("-export(['@_@ItfExports'/0]).")
     ] ++ interface_info(Ver, Rs, Evts, Enms)
       ++ interface_api(Rs, Evts, Enms).
+
+
+resolve_enums(#interface{requests=Rs,events=Evts,enums=Enms}=Itf, Itfs) ->
+    {Rs1, Enms1} = resolve_enums(Rs, Itfs, Enms),
+    {Evts1, Enms2} = resolve_enums(Evts, Itfs, Enms1),
+    Itf#interface{requests=Rs1, events=Evts1, enums=Enms2}.
+
+resolve_enums(ReqsOrEvts, Itfs, Enms) ->
+    lists:mapfoldr(fun (#request{args=Args}=Req, Acc) ->
+                           {Args1, Acc1} = resolve_args_enums(Args, Acc, Itfs),
+                           {Req#request{args=Args1}, Acc1};
+                       (#event{args=Args}=Evt, Acc) ->
+                           {Args1, Acc1} = resolve_args_enums(Args, Acc, Itfs),
+                           {Evt#event{args=Args1}, Acc1}
+                   end, Enms, ReqsOrEvts).
+
+resolve_args_enums(Args, Enms, Itfs) ->
+    lists:mapfoldr(fun (A, Acc) ->resolve_arg_enums(A, Acc, Itfs) end
+                  ,Enms, Args).
+
+resolve_arg_enums(#arg{enum=Enum}=Arg, Enums, _Itfs) when is_atom(Enum) ->
+    {Arg, Enums};
+
+resolve_arg_enums(#arg{enum={Itf, Name}}=Arg, Enums, Itfs) ->
+    Enum = resolve_enum(Itf, Name, Itfs),
+    {Arg#arg{enum=Name}, [Enum | Enums]}.
+
+
+resolve_enum(Itf, Name, []) ->
+    error({invalid_enum, {Itf, Name}});
+
+resolve_enum(Itf, Name, [#interface{name=Itf,enums=Enums} | _]) ->
+    case lists:keyfind(Name, #enum.name, Enums) of
+        false -> error({invalid_enum, {Itf, Name}});
+        Enum  -> Enum
+    end;
+
+resolve_enum(Itf, Name, [_ | Itfs]) ->
+    resolve_enum(Itf, Name, Itfs).
 
 
 parse_interface(Data) ->
@@ -97,7 +135,7 @@ parse_arg(#xmlElement{name='arg', attributes=Attrs}) ->
                ,type       = atom_attribute(type, Attrs)
                ,interface  = atom_attribute(interface, Attrs)
                ,allow_null = atom_attribute('allow-null', Attrs, false)
-               ,enum       = atom_attribute(enum, Attrs)
+               ,enum       = atom_or_tuple_attribute(enum, Attrs)
                }
     };
 
@@ -155,7 +193,13 @@ protocol_data(XmlFile) ->
 interface_data(#xmlElement{attributes=Attrs, content=Cont}) ->
     [Name] = [V || #xmlAttribute{name=name,value=V} <- Attrs],
     [Version] = [V || #xmlAttribute{name=version,value=V} <- Attrs],
-    {Name, Version, Cont}.
+    {Rs,Evts,Enms} = parse_interface(Cont),
+    #interface{ name     = list_to_atom(Name)
+              , version  = list_to_integer(Version)
+              , requests = Rs
+              , events   = Evts
+              , enums    = Enms
+              }.
 
 
 objects_dir(Protocol) ->
@@ -169,6 +213,22 @@ atom_attribute(Name, Attrs, Default) ->
     case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
         #xmlAttribute{value=V} -> list_to_atom(V);
         false                  -> Default
+    end.
+
+
+atom_or_tuple_attribute(Name, Attrs) ->
+    atom_or_tuple_attribute(Name, Attrs, undefined).
+
+atom_or_tuple_attribute(Name, Attrs, Default) ->
+    case lists:keyfind(Name, #xmlAttribute.name, Attrs) of
+        #xmlAttribute{value=V} ->
+            case string:tokens(V, ".") of
+                [V] ->
+                    list_to_atom(V);
+                [V1, V2] ->
+                    {list_to_atom(V1), list_to_atom(V2)}
+            end;
+        false -> Default
     end.
 
 

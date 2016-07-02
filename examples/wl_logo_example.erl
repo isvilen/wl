@@ -5,6 +5,7 @@
 -define(H,266).
 -define(SIZE,?W*?H*4).
 -define(STRIDE,?W*4).
+-define(FMT,argb8888).
 
 -define(ESC_KEY,{char, $\e}).
 
@@ -19,7 +20,7 @@ main() ->
 
     Fd = wayland_logo_fd(),
     Pool = wl_shm:create_pool(Shm, handler(), Fd, ?SIZE),
-    Buf = wl_shm_pool:create_buffer(Pool, handler(), 0, ?W, ?H, ?STRIDE, 0),
+    Buf = wl_shm_pool:create_buffer(Pool, handler(), 0, ?W, ?H, ?STRIDE, ?FMT),
 
     Surface = wl_compositor:create_surface(Compositor, handler()),
     SSurface = wl_shell:get_shell_surface(Shell, handler(), Surface),
