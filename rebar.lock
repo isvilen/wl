@@ -5,4 +5,12 @@
  {<<"memfd">>,
   {git,"https://github.com/isvilen/memfd.git",
        {ref,"60bd0e69843749a68fbb46311d13823bce11ebf4"}},
+  0},
+ {<<"ucd">>,
+  {git,"https://github.com/isvilen/ucd.git",
+       {ref,"2a581390c7018bb57eaf2d7b164fc92b5ef785e9"}},
+  1},
+ {<<"xkb">>,
+  {git,"https://github.com/isvilen/xkb.git",
+       {ref,"f551d26875fcfc65007e28e333f6629b281a7e92"}},
   0}].

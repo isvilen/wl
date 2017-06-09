@@ -24,7 +24,7 @@ handle_event(keymap, [xkb_v1, AfUnixFd, Size], State) ->
     Fd = memfd:fd_from_binary(afunix:fd_to_binary(AfUnixFd)),
     {ok, Keymap} = file:pread(Fd, bof, Size),
     {new_state, State#state{ keymap_format = xkb
-                           , keymap_state  = wl_xkb:init(xkb_v1, Keymap)
+                           , keymap_state  = xkb:init(xkb_v1, Keymap)
                            }};
 
 handle_event(keymap, [no_keymap, _Fd, _Size], State) ->
@@ -35,11 +35,11 @@ handle_event(repeat_info, [Rate, Delay], State) ->
 
 handle_event(modifiers, [Serial, ModsDepressed, ModsLatched, ModsLocked, Group]
             ,#state{keymap_format=xkb, keymap_state=KeymapState}=State) ->
-    NewKeymapState = wl_xkb:update_modifiers( KeymapState
-                                            , ModsDepressed
-                                            , ModsLatched
-                                            , ModsLocked
-                                            , Group),
+    NewKeymapState = xkb:update_modifiers( ModsDepressed
+                                         , ModsLatched
+                                         , ModsLocked
+                                         , Group
+                                         , KeymapState),
     {new_state, State#state{keymap_state=NewKeymapState, serial=Serial}};
 
 handle_event(modifiers, [Serial, _, _, _, _]
@@ -54,7 +54,7 @@ handle_event(key, [Serial, Time, Key, pressed], #state{ keymap_format=xkb
                                                       , keymap_state=KeymapState
                                                       , notify=NotifyPid
                                                       }=State) ->
-    {Keys, NewKeymapState} = wl_xkb:key_pressed(KeymapState, Key),
+    {Keys, NewKeymapState} = xkb:key_pressed(Key, KeymapState),
     send_keys(NotifyPid, pressed, Serial, Time, Keys),
     {new_state, State#state{keymap_state=NewKeymapState, serial=Serial}};
 
@@ -62,7 +62,7 @@ handle_event(key, [Serial, Time, Key, released], #state{ keymap_format=xkb
                                                        , keymap_state=KeymapState
                                                        , notify=NotifyPid
                                                        }=State) ->
-    {Keys, NewKeymapState} = wl_xkb:key_released(KeymapState, Key),
+    {Keys, NewKeymapState} = xkb:key_released(Key, KeymapState),
     send_keys(NotifyPid, released, Serial, Time, Keys),
     {new_state, State#state{keymap_state=NewKeymapState, serial=Serial}};
 
