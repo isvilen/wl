@@ -72,10 +72,10 @@ init_shm_pool(#{shm := Shm, cursors := Cursors} = State) ->
     SurfaceBufferSize = ?MAX_W * ?MAX_H * 4,
     Size =  2 * SurfaceBufferSize + MaxCursorSize,
 
-    MemFd = memfd:create(),
+    MemFd = memfd:new(),
     fill_fd(MemFd, ?BLUE, Size),
 
-    Fd = afunix:fd_from_binary(memfd:fd_to_binary(MemFd)),
+    Fd = afunix:fd_from_binary(memfd:fd(MemFd)),
 
     State#{ shm_pool => wl_shm:create_pool(Shm, handler(), Fd, Size)
           , shm_free => [0, SurfaceBufferSize]

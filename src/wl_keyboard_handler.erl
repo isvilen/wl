@@ -21,7 +21,7 @@ init(_Parent, _ItfVersion, Pid) ->
 
 
 handle_event(keymap, [xkb_v1, AfUnixFd, Size], State) ->
-    Fd = memfd:fd_from_binary(afunix:fd_to_binary(AfUnixFd)),
+    Fd = memfd:new(afunix:fd_to_binary(AfUnixFd)),
     {ok, Keymap} = file:pread(Fd, bof, Size),
     {new_state, State#state{ keymap_format = xkb
                            , keymap_state  = xkb:init(xkb_v1, Keymap)
