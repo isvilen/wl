@@ -15,3 +15,4 @@ logs
 _build
 src/wayland/
 src/drm/
+rebar.lock
