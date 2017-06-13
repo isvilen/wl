@@ -55,7 +55,7 @@ wayland_logo_fd() ->
     {ok, Data} = file:read_file(Logo),
     MemFd = memfd:new(),
     ok = memfd:pwrite(MemFd, 0, zlib:uncompress(Data)),
-    afunix:fd_from_binary(memfd:fd(MemFd)).
+    memfd:fd(MemFd).
 
 
 handler() ->

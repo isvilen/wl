@@ -97,7 +97,8 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 
-handle_info({afunix, Ref}, #state{read_ready=Ref}=State) ->
+handle_info({select, S, Ref, ready_input},
+            #state{socket=S, read_ready=Ref}=State) ->
     {noreply, socket_read(State)};
 
 handle_info(_Msg, State) ->
@@ -185,12 +186,14 @@ send_request(Request, [], #state{socket=S}=State) ->
 
 send_request(Request, Fds, #state{socket=S}=State) ->
     EncRequest = wl_wire:encode_request(Request),
-    afunix:send(S, Fds, EncRequest),
+    afunix:send(S, EncRequest, Fds),
     notify_read(State).
 
 
 notify_read(#state{socket=S,read_ready=undefined}=State) ->
-    State#state{read_ready=afunix:monitor(S, read)};
+    Ref = make_ref(),
+    ok = afunix:select(S, input, Ref),
+    State#state{read_ready=Ref};
 
 notify_read(State) ->
     State.
@@ -203,7 +206,7 @@ socket_read({ok, Bytes}, #state{recv_data=Data}=State) ->
     NewData = <<Data/binary,Bytes/binary>>,
     socket_read(handle_recv_data(State#state{recv_data=NewData}));
 
-socket_read({ok, Fds, Bytes}, #state{recv_data=Data, recv_fds=OldFds}=State) ->
+socket_read({ok, Bytes, Fds}, #state{recv_data=Data, recv_fds=OldFds}=State) ->
     NewFds = OldFds ++ Fds,
     NewData = <<Data/binary,Bytes/binary>>,
     socket_read(handle_recv_data(State#state{ recv_data=NewData

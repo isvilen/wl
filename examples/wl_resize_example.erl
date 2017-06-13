@@ -75,9 +75,7 @@ init_shm_pool(#{shm := Shm, cursors := Cursors} = State) ->
     MemFd = memfd:new(),
     fill_fd(MemFd, ?BLUE, Size),
 
-    Fd = afunix:fd_from_binary(memfd:fd(MemFd)),
-
-    State#{ shm_pool => wl_shm:create_pool(Shm, handler(), Fd, Size)
+    State#{ shm_pool => wl_shm:create_pool(Shm, handler(), memfd:fd(MemFd), Size)
           , shm_free => [0, SurfaceBufferSize]
           , memfd    => MemFd
           }.
