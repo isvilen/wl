@@ -1,2 +1,0 @@
--record(wl_cursor,{name,size,images}).
--record(wl_cursor_image,{width, height, x_hot, y_hot, delay, data}).

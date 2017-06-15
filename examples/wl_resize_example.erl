@@ -1,7 +1,7 @@
 -module(wl_resize_example).
 -export([main/0]).
 
--include_lib("wl/include/wl_cursor.hrl").
+-include_lib("themes/include/themes.hrl").
 
 -define(MIN_W,40).
 -define(MIN_H,40).
@@ -14,18 +14,7 @@
 
 -define(ESC_KEY,{char,$\e}).
 
--define(CURSOR_THEME,"default").
 -define(CURSOR_SIZE,16).
--define(CURSORS,[ default
-                , top_side
-                , left_side
-                , right_side
-                , bottom_side
-                , top_left_corner
-                , top_right_corner
-                , bottom_left_corner
-                , bottom_right_corner
-                ]).
 
 -define(FMT,argb8888).
 
@@ -59,15 +48,22 @@ init_globals(#{connection := Conn} = State) ->
 
 
 init_cursors(State) ->
-    State#{ cursors => wl_cursor:load(?CURSOR_THEME, ?CURSOR_SIZE, ?CURSORS)
+    {ok, Theme} = themes:load(),
+    Cursors = themes:cursors(Theme, ?CURSOR_SIZE),
+    State#{ cursors => lists:foldl(fun init_cursor/2, #{}, Cursors)
           , current_cursor => default
           , serial => undefined
           }.
 
+init_cursor(#cursor{id=Id, aliases=Aliases}=C, Acc) ->
+    IdKey = list_to_atom(Id),
+    lists:foldl(fun (V, Acc0) -> Key = list_to_atom(V), Acc0#{Key => C} end,
+                Acc#{IdKey => C}, Aliases).
+
 
 init_shm_pool(#{shm := Shm, cursors := Cursors} = State) ->
-    MaxCursorSize = lists:max([size(Img) || #wl_cursor{images=Imgs} <- Cursors
-                                          , #wl_cursor_image{data=Img} <- Imgs]),
+    MaxCursorSize = lists:max([size(Img) || #cursor{images=Imgs} <- maps:values(Cursors)
+                                          , #cursor_image{data=Img} <- Imgs]),
 
     SurfaceBufferSize = ?MAX_W * ?MAX_H * 4,
     Size =  2 * SurfaceBufferSize + MaxCursorSize,
@@ -193,13 +189,12 @@ set_cursor(Cursor, Pointer, #{ serial := Serial
                              , cursor_surface := Surface
                              , cursors := Cursors
                              }=State) ->
-    #wl_cursor{images=[#wl_cursor_image{ x_hot  = Xhot
-                                       , y_hot  = Yhot
-                                       , width  = W
-                                       , height = H
-                                       , data   = Data
-                                       }
-                       |_]} = lists:keyfind(Cursor, #wl_cursor.name, Cursors),
+    #cursor{images=[#cursor_image{ x_hot  = Xhot
+                                 , y_hot  = Yhot
+                                 , width  = W
+                                 , height = H
+                                 , data   = Data
+                                 } |_]} = maps:get(Cursor, Cursors),
     Buf = allocate_cursor_buffer(W, H, Data, State),
     ok = wl_surface:attach(Surface, Buf, 0, 0),
     ok = wl_surface:damage(Surface, 0, 0, W, H),
