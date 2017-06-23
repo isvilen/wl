@@ -53,9 +53,9 @@ event_loop() ->
 wayland_logo_fd() ->
     Logo = code:where_is_file("wayland_logo.zlib"),
     {ok, Data} = file:read_file(Logo),
-    MemFd = memfd:create(),
+    MemFd = memfd:new(),
     ok = memfd:pwrite(MemFd, 0, zlib:uncompress(Data)),
-    afunix:fd_from_binary(memfd:fd_to_binary(MemFd)).
+    memfd:fd(MemFd).
 
 
 handler() ->
