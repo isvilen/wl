@@ -48,7 +48,7 @@ handle_call({bind, Itf, Handler}, State) ->
         Values ->
             Pids = [do_bind(Itf, NameVer, Handler) || NameVer <- Values],
             NewBindings = register_binding(Itf, Pids, State#state.bindings),
-            {reply, {ok, Pids, State#state{bindings=NewBindings}}}
+            {reply, {ok, Pids}, State#state{bindings=NewBindings}}
     end;
 
 handle_call({find, Itf}, #state{bindings=Bindings}) ->
